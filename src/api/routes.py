@@ -8,6 +8,8 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from src.api.schemas import (
+    CommitRegionRequest,
+    CommitRegionResponse,
     JobStatus,
     OcrRegionRequest,
     OcrRegionResponse,
@@ -236,6 +238,34 @@ def review_ocr_region(
     if block is None:
         return OcrRegionResponse(ok=False, message="No text detected in that region.")
     return OcrRegionResponse(ok=True, block=ReviewBlock.model_validate(block))
+
+
+@router.post("/review/{job_id}/{page_idx}/commit-region", response_model=CommitRegionResponse)
+def review_commit_region(
+    job_id: str, page_idx: int, req: CommitRegionRequest
+) -> CommitRegionResponse:
+    """Commit a user-marked region: inpaint that area on the bg AND
+    persist a new editable text block at that position. The user-typed
+    text is what shows in the textbox; the original ink at that spot is
+    cleaned up so the two don't collide."""
+    job = _require_workspace(job_id)
+    text = (req.text or "").strip()
+    if not text:
+        return CommitRegionResponse(ok=False, message="Text is empty")
+    converter = local_export.get_shared_converter()
+    converter.initialize_models()
+    if converter.lama is None:
+        raise HTTPException(500, "Inpainting model not initialized")
+    block = local_export.commit_new_region(
+        job.workspace_dir,
+        page_idx,
+        list(req.bbox_norm),
+        text,
+        converter.lama,
+    )
+    if block is None:
+        return CommitRegionResponse(ok=False, message="Could not commit region")
+    return CommitRegionResponse(ok=True, block=ReviewBlock.model_validate(block))
 
 
 @router.post("/review/{job_id}/regenerate")

@@ -193,18 +193,22 @@
                     <div class="text-sm font-semibold text-amber-800">새 영역</div>
                     <button @click="ocrPending()" :disabled="review.ocring"
                             class="w-full text-sm bg-amber-600 hover:bg-amber-700 text-white rounded px-3 py-1.5 disabled:opacity-50">
-                        <span x-show="!review.ocring">🔍 이 영역에 OCR 실행</span>
+                        <span x-show="!review.ocring">🔍 이 영역에서 OCR 자동 추출</span>
                         <span x-show="review.ocring">OCR 실행 중…</span>
                     </button>
-                    <label class="block text-xs text-amber-800 mt-2">또는 텍스트 직접 입력:</label>
+                    <p class="text-[11px] text-amber-700 -mt-1">OCR이 결과를 아래 칸에 채워줍니다. 검토·수정 후 추가하세요.</p>
+                    <label class="block text-xs text-amber-800 mt-2">텍스트 (자동 또는 직접 입력):</label>
                     <input x-model="review.pendingText" type="text" placeholder="텍스트"
                            class="w-full border border-amber-300 rounded px-2 py-1 text-sm" />
                     <div class="flex gap-2">
                         <button @click="addPendingManual()"
-                                :disabled="!review.pendingText.trim()"
-                                class="flex-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-50">블록으로 추가</button>
-                        <button @click="cancelPending()"
-                                class="flex-1 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-3 py-1">취소</button>
+                                :disabled="!review.pendingText.trim() || review.committing"
+                                class="flex-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-50">
+                            <span x-show="!review.committing">✅ 추가 (배경 정리됨)</span>
+                            <span x-show="review.committing">정리 중…</span>
+                        </button>
+                        <button @click="cancelPending()" :disabled="review.committing"
+                                class="flex-1 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-3 py-1 disabled:opacity-50">취소</button>
                     </div>
                 </div>
 

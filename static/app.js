@@ -27,6 +27,7 @@ function app() {
             pending: null,            // 드래그/브러시 종료 후 OCR 대기 영역
             pendingText: '',
             ocring: false,
+            committing: false,
             saving: false,
             regenerating: false,
             dirty: false,
@@ -437,6 +438,8 @@ function app() {
             this.review.pendingText = '';
         },
 
+        // OCR만 실행 — 검출된 텍스트를 입력칸에 채워줌. 사용자가 검토 후
+        // "블록으로 추가" 버튼으로 최종 commit하면 그제서야 inpaint + 저장.
         async ocrPending() {
             if (!this.review.pending) return;
             this.review.ocring = true;
@@ -450,39 +453,56 @@ function app() {
                     body: JSON.stringify({bbox_norm}),
                 });
                 const data = await r.json();
-                if (!data.ok || !data.block) {
-                    this.showToast(data.message || 'No text detected');
-                    return;
+                if (data.ok && data.block && data.block.text) {
+                    this.review.pendingText = data.block.text;
+                    this.showToast(`OCR 결과: "${data.block.text.slice(0, 30)}"`);
+                } else {
+                    this.showToast(data.message || 'OCR이 텍스트를 찾지 못했습니다. 직접 입력해주세요.');
                 }
-                this._appendBlock(data.block);
-                this.review.pending = null;
-                this.review.pendingText = '';
-                this.review.dirty = true;
-                this.showToast(`Added: "${data.block.text.slice(0, 24)}"`);
             } catch (e) {
-                this.showToast('OCR failed: ' + e.message);
+                this.showToast('OCR 실패: ' + e.message);
             } finally {
                 this.review.ocring = false;
             }
         },
 
-        addPendingManual() {
-            if (!this.review.pending || !this.review.pendingText.trim()) return;
-            const W = this.review.bgWidth, H = this.review.bgHeight;
-            const wPt = this.review.pageWPt, hPt = this.review.pageHPt;
-            const sx = wPt / W, sy = hPt / H;
-            const p = this.review.pending;
-            this._appendBlock({
-                text: this.review.pendingText.trim(),
-                x_pt: p.x * sx,
-                y_pt: p.y * sy,
-                w_pt: p.w * sx,
-                h_pt: p.h * sy,
-                score: 0.99,
-            });
-            this.review.pending = null;
-            this.review.pendingText = '';
-            this.review.dirty = true;
+        // 사용자가 입력한 텍스트로 블록을 commit. 서버에서 그 영역 inpaint
+        // + 블록 저장이 함께 일어나고, 프론트엔드는 새 bg를 다시 받아 표시.
+        async addPendingManual() {
+            if (!this.review.pending) return;
+            const text = (this.review.pendingText || '').trim();
+            if (!text) {
+                this.showToast('텍스트를 입력해주세요.');
+                return;
+            }
+            this.review.committing = true;
+            try {
+                const W = this.review.bgWidth, H = this.review.bgHeight;
+                const p = this.review.pending;
+                const bbox_norm = [p.x / W, p.y / H, p.w / W, p.h / H];
+                const r = await fetch(`/api/review/${this.job.job_id}/${this.review.currentPage}/commit-region`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({bbox_norm, text}),
+                });
+                const data = await r.json();
+                if (!data.ok || !data.block) {
+                    this.showToast(data.message || '추가 실패');
+                    return;
+                }
+                this._appendBlock(data.block);
+                // 서버가 bg를 inpaint해서 다시 저장했으므로 캐시 무효화하고 새로 로드
+                this.review.bgUrl = `/api/review/${this.job.job_id}/${this.review.currentPage}/bg.png?t=${Date.now()}`;
+                this.review.pending = null;
+                this.review.pendingText = '';
+                // commit-region은 이미 서버에 저장한 상태이므로 현재 페이지의 dirty는
+                // 그대로 유지 (다른 박스 편집은 아직 미저장). 하지만 추가는 이미 반영.
+                this.showToast('영역 추가됨 (배경 정리 완료)');
+            } catch (e) {
+                this.showToast('추가 실패: ' + e.message);
+            } finally {
+                this.review.committing = false;
+            }
         },
 
         _appendBlock(block) {

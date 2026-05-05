@@ -384,6 +384,77 @@ def ocr_region_from_bg(
     }
 
 
+def commit_new_region(
+    workspace_dir: Path,
+    page_idx: int,
+    bbox_norm: list[float],
+    text: str,
+    lama,
+) -> dict | None:
+    """Add a brand-new text block at the given region AND inpaint that
+    region of the bg so the original ink no longer shows through the new
+    editable textbox. Single round-trip equivalent of "draw a region,
+    write the text, mask out what was there."
+
+    bbox_norm is [x, y, w, h] in 0..1 of the bg image.
+    Returns the new block dict (also persisted to the page's JSON), or
+    None on a degenerate input.
+    """
+    json_path = workspace_dir / f"page_{page_idx}.json"
+    bg_path = workspace_dir / f"page_{page_idx}_bg.png"
+    if not json_path.exists() or not bg_path.exists():
+        return None
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    page_w_pt = float(data["page_w_pt"])
+
+    img = Image.open(bg_path).convert("RGB")
+    W, H = img.size
+    x_norm, y_norm, w_norm, h_norm = bbox_norm
+    left = max(0, int(x_norm * W))
+    top = max(0, int(y_norm * H))
+    right = min(W, int((x_norm + w_norm) * W))
+    bottom = min(H, int((y_norm + h_norm) * H))
+    if right <= left or bottom <= top:
+        return None
+
+    # Build a binary mask covering the user-marked region with a small
+    # safety dilation so any ink hugging the edge gets removed too.
+    mask = np.zeros((H, W), dtype=np.uint8)
+    pad_px = max(4, int(0.005 * max(W, H)))
+    l = max(0, left - pad_px)
+    t = max(0, top - pad_px)
+    r = min(W, right + pad_px)
+    b = min(H, bottom + pad_px)
+    mask[t:b, l:r] = 255
+
+    mask_pil = Image.fromarray(mask)
+    try:
+        with torch.no_grad():
+            cleaned = lama(img, mask_pil)
+    except Exception:
+        cleaned = img  # If LaMa fails, fall back to the original bg
+    cleaned.save(str(bg_path), format="PNG", optimize=True)
+
+    px_per_pt = max(W / page_w_pt, 1e-6)
+    block = {
+        "text": text,
+        "x_pt": left / px_per_pt,
+        "y_pt": top / px_per_pt,
+        "w_pt": (right - left) / px_per_pt,
+        "h_pt": (bottom - top) / px_per_pt,
+        "score": 0.99,
+    }
+
+    blocks = data.get("blocks", []) or []
+    blocks.append(block)
+    data["blocks"] = blocks
+    json_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return block
+
+
 def assemble_pptx_from_workspace(workspace_dir: Path, output_path: Path) -> Path:
     """Rebuild a PPTX from the per-page state saved during the original
     conversion (plus any edits the user has made via the review API)."""

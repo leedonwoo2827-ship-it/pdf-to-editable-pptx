@@ -61,3 +61,14 @@ class OcrRegionResponse(BaseModel):
 
 class SaveBlocksRequest(BaseModel):
     blocks: list[ReviewBlock]
+
+
+class CommitRegionRequest(BaseModel):
+    bbox_norm: list[float]  # [x, y, w, h] in 0..1 of the page background image
+    text: str
+
+
+class CommitRegionResponse(BaseModel):
+    ok: bool
+    message: str = ""
+    block: ReviewBlock | None = None

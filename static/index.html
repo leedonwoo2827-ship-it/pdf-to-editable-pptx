@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PDF to Editable PowerPoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div x-data="app()" x-init="init()" class="h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 shrink-0">
+        <h1 class="font-semibold text-slate-900">PDF → Editable PowerPoint</h1>
+        <span class="text-xs text-slate-500">100% local · LaMa inpainting · no API key</span>
+
+        <span x-show="job" class="text-sm text-slate-500 ml-2" x-text="job?.filename"></span>
+
+        <span class="grow"></span>
+
+        <!-- DPI selector (only when not running) -->
+        <div x-show="job && !running && !complete" class="flex items-center gap-2 text-sm">
+            <label class="text-slate-600">Quality (DPI):</label>
+            <select x-model.number="dpi" class="border border-slate-300 rounded px-2 py-1 text-sm bg-white">
+                <option :value="100">100 (fast)</option>
+                <option :value="150">150</option>
+                <option :value="200">200 (recommended)</option>
+                <option :value="250">250 (slow, sharpest)</option>
+            </select>
+        </div>
+
+        <label x-show="!job" class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-1.5 rounded shadow">
+            Upload PDF
+            <input type="file" accept="application/pdf" class="hidden" @change="onUpload($event)" />
+        </label>
+
+        <button x-show="job && !running && !complete" @click="startProcess()"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1.5 rounded shadow">
+            Start Convert
+        </button>
+
+        <button x-show="running" @click="cancelProcess()"
+                class="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium px-4 py-1.5 rounded">
+            Cancel
+        </button>
+
+        <a x-show="complete && outputReady" :href="`/api/result/${job?.job_id}`"
+           class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1.5 rounded shadow">
+            Download .pptx
+        </a>
+
+        <button x-show="job" @click="reset()" class="text-slate-500 hover:text-slate-900 text-sm px-3 py-1.5">
+            New PDF
+        </button>
+    </header>
+
+    <!-- Empty state -->
+    <main x-show="!job" class="flex-1 flex items-center justify-center bg-slate-100">
+        <div class="text-center max-w-md">
+            <div class="text-5xl mb-3">📄 → 🖼️</div>
+            <h2 class="text-2xl font-semibold text-slate-800 mb-2">Convert PDF to editable PowerPoint</h2>
+            <p class="text-slate-600 text-sm mb-2">
+                AI removes original text from page images and lays editable text boxes on top.
+                100% local — no API key, no cloud, no rate limits.
+            </p>
+            <p class="text-slate-500 text-xs mb-6">
+                Powered by LaMa inpainting + RapidOCR (CPU-friendly).
+                First-run model download: ~200 MB.
+            </p>
+            <label class="cursor-pointer inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5 rounded shadow">
+                Upload a PDF
+                <input type="file" accept="application/pdf" class="hidden" @change="onUpload($event)" />
+            </label>
+        </div>
+    </main>
+
+    <!-- Working state -->
+    <main x-show="job" class="flex-1 grid grid-cols-[260px_1fr] overflow-hidden">
+
+        <!-- Left: page list with status -->
+        <aside class="bg-white border-r border-slate-200 overflow-y-auto p-2 space-y-1">
+            <div class="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
+                <span x-text="`${doneCount} / ${job?.page_count || 0} done`"></span>
+                <span x-show="errorCount" class="text-red-600 ml-2" x-text="`${errorCount} errors`"></span>
+            </div>
+            <template x-for="ps in pages" :key="ps.index">
+                <div class="flex items-center gap-2 px-2 py-2 rounded hover:bg-slate-50">
+                    <div class="w-12 h-12 bg-slate-100 rounded flex items-center justify-center overflow-hidden shrink-0">
+                        <img :src="thumbUrl(ps.index)" class="max-w-full max-h-full" loading="lazy" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm text-slate-800" x-text="`Page ${ps.index + 1}`"></div>
+                        <div class="text-xs text-slate-500 truncate" x-text="stateLabel(ps)"></div>
+                    </div>
+                    <div class="text-xl shrink-0" x-text="stateIcon(ps.state)"></div>
+                </div>
+            </template>
+        </aside>
+
+        <!-- Right: status overview / result preview -->
+        <section class="overflow-y-auto p-6 bg-slate-50">
+
+            <!-- Idle: ready to start -->
+            <div x-show="job && !running && !complete" class="space-y-4">
+                <h2 class="text-lg font-semibold text-slate-800">Ready to convert</h2>
+                <p class="text-sm text-slate-600">
+                    <span x-text="job?.page_count"></span> pages will be processed at
+                    <span class="font-medium" x-text="dpi"></span> DPI.
+                    Estimated time:
+                    <span x-text="estimateTime()"></span>
+                    on your machine.
+                </p>
+                <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
+                    <li>Each page: render → OCR (RapidOCR) → text removal (LaMa) → editable text overlay</li>
+                    <li>First run downloads ~200 MB LaMa model (one-time)</li>
+                    <li>CPU mode is slower (~30–60s per page); GPU mode is ~2–5s/page</li>
+                </ul>
+                <button @click="startProcess()"
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded shadow">
+                    Start Convert
+                </button>
+            </div>
+
+            <!-- Running -->
+            <div x-show="running" class="space-y-4">
+                <h2 class="text-lg font-semibold text-slate-800">Converting…</h2>
+                <div class="bg-white rounded shadow p-4 space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">Progress</span>
+                        <span class="font-medium" x-text="`${doneCount} / ${job?.page_count} pages`"></span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div class="bg-emerald-500 h-full transition-all"
+                             :style="`width: ${overallPercent}%`"></div>
+                    </div>
+                    <div class="text-xs text-slate-500" x-text="currentMessage"></div>
+                </div>
+                <p class="text-xs text-slate-500">
+                    The conversion runs locally — no data leaves your computer.
+                </p>
+            </div>
+
+            <!-- Complete -->
+            <div x-show="complete" class="space-y-4">
+                <h2 class="text-xl font-semibold text-emerald-700">✓ Conversion complete</h2>
+                <p class="text-sm text-slate-700">
+                    <span x-text="doneCount"></span> of <span x-text="job?.page_count"></span> pages processed.
+                    <span x-show="errorCount" class="text-red-700">
+                        (<span x-text="errorCount"></span> errors — check left panel for details.)
+                    </span>
+                </p>
+                <a :href="`/api/result/${job?.job_id}`"
+                   class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded shadow">
+                    Download .pptx
+                </a>
+                <p class="text-xs text-slate-500">
+                    Open the file in PowerPoint. Each text box is editable.
+                </p>
+            </div>
+
+            <!-- Failed -->
+            <div x-show="failed" class="space-y-3">
+                <h2 class="text-lg font-semibold text-red-700">Conversion failed</h2>
+                <p class="text-sm text-slate-700" x-text="job?.error"></p>
+                <button @click="startProcess()"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-1.5 rounded">
+                    Retry
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast -->
+    <div x-show="toast" x-transition class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg text-sm z-50" x-text="toast"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

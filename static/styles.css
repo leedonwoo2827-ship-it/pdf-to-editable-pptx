@@ -1,0 +1,11 @@
+/* Minor tweaks beyond Tailwind. */
+html, body { height: 100%; }
+
+/* Smooth fade for x-transition.opacity. */
+[x-cloak] { display: none !important; }
+
+/* Make the SVG hit areas transparent but capture clicks. */
+svg rect { transition: fill 0.1s, stroke 0.1s; }
+
+/* Prevent FOUC before Alpine boots. */
+[x-show]:not([x-transition]) { transition: opacity 0.15s; }

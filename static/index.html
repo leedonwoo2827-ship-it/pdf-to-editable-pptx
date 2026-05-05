@@ -121,9 +121,11 @@
         <div class="grid grid-cols-[1fr_320px] overflow-hidden">
             <!-- Center: SVG editor on top of the inpainted bg -->
             <section class="overflow-auto bg-slate-200 p-4 flex items-start justify-center">
-                <div class="relative bg-white shadow-lg" :style="`width: ${review.displayW}px`" x-show="review.bgWidth > 0">
-                    <img :src="review.bgUrl" class="block w-full h-auto" @load="onReviewBgLoaded($event)" draggable="false" />
-                    <svg class="absolute top-0 left-0 w-full h-full" :viewBox="`0 0 ${review.bgWidth} ${review.bgHeight}`"
+                <div class="relative bg-white shadow-lg"
+                     :style="`width: ${review.displayW}px; height: ${review.displayH || 100}px`"
+                     x-show="review.bgWidth > 0">
+                    <img :src="review.bgUrl" class="block w-full h-full" style="object-fit: fill;" @load="onReviewBgLoaded($event)" draggable="false" />
+                    <svg class="absolute inset-0 w-full h-full" :viewBox="`0 0 ${review.bgWidth} ${review.bgHeight}`"
                          preserveAspectRatio="none"
                          @mousedown="reviewMouseDown($event)"
                          @mousemove="reviewMouseMove($event)"
@@ -144,11 +146,24 @@
                                       x-text="(idx+1) + '. ' + (b.text || '').slice(0, 28)"></text>
                             </g>
                         </template>
-                        <!-- 새로 그린 영역 (OCR 대기) -->
-                        <rect x-show="review.pending"
-                              :x="review.pending?.x" :y="review.pending?.y"
-                              :width="review.pending?.w" :height="review.pending?.h"
-                              fill="rgba(245,158,11,0.18)" stroke="#f59e0b" stroke-width="3" />
+                        <!-- 새로 그린 영역 (OCR 대기) - 이동/리사이즈 가능 -->
+                        <g x-show="review.pending">
+                            <!-- 본체: 안쪽 클릭+드래그로 이동 -->
+                            <rect
+                                  :x="review.pending?.x" :y="review.pending?.y"
+                                  :width="review.pending?.w" :height="review.pending?.h"
+                                  fill="rgba(245,158,11,0.18)" stroke="#f59e0b" stroke-width="3"
+                                  class="cursor-move"
+                                  @mousedown.stop="pendingHandleDown('move', $event)" />
+                            <!-- 4개 코너 핸들 -->
+                            <template x-for="h in pendingHandlePositions()" :key="h.name">
+                                <rect :x="h.x - h.size/2" :y="h.y - h.size/2"
+                                      :width="h.size" :height="h.size"
+                                      fill="#f59e0b" stroke="white" stroke-width="2"
+                                      :class="`cursor-${h.cursor}`"
+                                      @mousedown.stop="pendingHandleDown(h.name, $event)" />
+                            </template>
+                        </g>
                         <!-- 사각형 도구로 드래그 중 -->
                         <rect x-show="review.drawing"
                               :x="review.drawing?.x" :y="review.drawing?.y"

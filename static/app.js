@@ -17,6 +17,7 @@ function app() {
             bgWidth: 0,
             bgHeight: 0,
             displayW: 1100,           // 에디터 캔버스 CSS 픽셀 너비
+            displayH: 0,              // 에디터 캔버스 CSS 픽셀 높이 (이미지 로드 시 계산)
             blocks: [],               // [{text, x_pt, y_pt, w_pt, h_pt, score, _px:{x,y,w,h}}]
             pageWPt: 1,
             pageHPt: 1,
@@ -33,6 +34,7 @@ function app() {
             dirty: false,
             _dragStart: null,
             movingBlock: null,        // 기존 박스 드래그 이동 상태 {idx, startX, startY, origX_pt, origY_pt, moved}
+            pendingDrag: null,        // pending 박스 이동/리사이즈 {handle, startX, startY, origX, origY, origW, origH}
         },
 
         async init() {
@@ -269,6 +271,10 @@ function app() {
             const img = event.target;
             this.review.bgWidth = img.naturalWidth;
             this.review.bgHeight = img.naturalHeight;
+            // 부모 div에 명시적 높이를 주면 SVG의 inset-0/h-full이 안정적으로 동작
+            // → 좌표 변환에서 SVG 실제 픽셀 높이와 viewBox 높이가 정확히 매칭됨
+            const ratio = img.naturalHeight / Math.max(img.naturalWidth, 1);
+            this.review.displayH = Math.round(this.review.displayW * ratio);
             this._recomputeBlockPixels();
         },
 
@@ -324,6 +330,35 @@ function app() {
             return {x, y};
         },
 
+        // ----- Pending 박스 핸들 (이동·리사이즈) -----
+        pendingHandlePositions() {
+            const p = this.review.pending;
+            if (!p) return [];
+            // 핸들 크기는 viewBox 단위. bg 크기에 비례하여 잘 보이도록.
+            const size = Math.max(14, Math.round((this.review.bgWidth || 1000) * 0.014));
+            return [
+                {name: 'nw', x: p.x,         y: p.y,         size, cursor: 'nwse-resize'},
+                {name: 'ne', x: p.x + p.w,   y: p.y,         size, cursor: 'nesw-resize'},
+                {name: 'sw', x: p.x,         y: p.y + p.h,   size, cursor: 'nesw-resize'},
+                {name: 'se', x: p.x + p.w,   y: p.y + p.h,   size, cursor: 'nwse-resize'},
+            ];
+        },
+
+        pendingHandleDown(handle, event) {
+            event.stopPropagation();
+            if (!this.review.pending) return;
+            const p = this._svgPoint(event);
+            this.review.pendingDrag = {
+                handle,
+                startX: p.x,
+                startY: p.y,
+                origX: this.review.pending.x,
+                origY: this.review.pending.y,
+                origW: this.review.pending.w,
+                origH: this.review.pending.h,
+            };
+        },
+
         // ----- 기존 박스 드래그 이동 시작 -----
         blockMouseDown(idx, event) {
             event.stopPropagation();
@@ -358,6 +393,43 @@ function app() {
         },
 
         reviewMouseMove(event) {
+            // 0) Pending 박스 이동/리사이즈 중
+            const pd = this.review.pendingDrag;
+            if (pd && this.review.pending) {
+                const p = this._svgPoint(event);
+                const dx = p.x - pd.startX;
+                const dy = p.y - pd.startY;
+                const minSize = 8;
+                if (pd.handle === 'move') {
+                    this.review.pending.x = pd.origX + dx;
+                    this.review.pending.y = pd.origY + dy;
+                } else if (pd.handle === 'nw') {
+                    const nx = pd.origX + dx;
+                    const ny = pd.origY + dy;
+                    const nw = pd.origW - dx;
+                    const nh = pd.origH - dy;
+                    if (nw >= minSize) { this.review.pending.x = nx; this.review.pending.w = nw; }
+                    if (nh >= minSize) { this.review.pending.y = ny; this.review.pending.h = nh; }
+                } else if (pd.handle === 'ne') {
+                    const ny = pd.origY + dy;
+                    const nw = pd.origW + dx;
+                    const nh = pd.origH - dy;
+                    if (nw >= minSize) { this.review.pending.w = nw; }
+                    if (nh >= minSize) { this.review.pending.y = ny; this.review.pending.h = nh; }
+                } else if (pd.handle === 'sw') {
+                    const nx = pd.origX + dx;
+                    const nw = pd.origW - dx;
+                    const nh = pd.origH + dy;
+                    if (nw >= minSize) { this.review.pending.x = nx; this.review.pending.w = nw; }
+                    if (nh >= minSize) { this.review.pending.h = nh; }
+                } else if (pd.handle === 'se') {
+                    const nw = pd.origW + dx;
+                    const nh = pd.origH + dy;
+                    if (nw >= minSize) { this.review.pending.w = nw; }
+                    if (nh >= minSize) { this.review.pending.h = nh; }
+                }
+                return;
+            }
             // 1) 기존 박스 이동 중
             const m = this.review.movingBlock;
             if (m) {
@@ -398,6 +470,11 @@ function app() {
         },
 
         reviewMouseUp() {
+            // 0) Pending 박스 이동/리사이즈 종료
+            if (this.review.pendingDrag) {
+                this.review.pendingDrag = null;
+                return;
+            }
             // 1) 기존 박스 이동 종료
             const m = this.review.movingBlock;
             if (m) {

@@ -9,6 +9,7 @@ Ported from ysrock/pdf2pptx-ai-tool with four targeted fixes:
 from __future__ import annotations
 
 import gc
+import json
 import threading
 import time
 from io import BytesIO
@@ -21,6 +22,7 @@ import pdfplumber
 import torch
 from PIL import Image
 from pptx import Presentation
+from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Emu, Pt
 from rapidocr_onnxruntime import RapidOCR
 from simple_lama_inpainting import SimpleLama
@@ -235,6 +237,203 @@ class LocalConverter:
         return cleaned, text_blocks
 
 
+def _add_textbox_for_block(
+    slide,
+    block: dict,
+    left_pt: float,
+    top_pt: float,
+    scale_x: float,
+    scale_y: float,
+) -> None:
+    """Place one editable textbox on a slide for a single OCR block.
+
+    Shared between the initial conversion path and the rebuild-from-
+    workspace path so both produce identical box geometry.
+    """
+    box_left = Pt(left_pt + block["x_pt"] * scale_x)
+    box_top = Pt(top_pt + block["y_pt"] * scale_y)
+    raw_w = block["w_pt"] * scale_x
+    raw_h = block["h_pt"] * scale_y
+    box_w = Pt(max(raw_w * 1.12, 12.0))
+    box_h = Pt(max(raw_h * 1.05, 10.0))
+    txBox = slide.shapes.add_textbox(box_left, box_top, box_w, box_h)
+    tf = txBox.text_frame
+    # word_wrap=False keeps single-line text intact even when the OCR bbox
+    # is slightly narrower than the rendered glyphs (so "LLM" doesn't wrap
+    # to L/L/M). auto_size lets the shape grow horizontally instead.
+    tf.word_wrap = False
+    try:
+        tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+    except Exception:
+        pass
+    tf.text = block.get("text", "")
+    if block.get("h_pt", 0) > 0:
+        font_pt = max(6.0, raw_h * 0.65)
+        tf.paragraphs[0].font.size = Pt(font_pt)
+
+
+def _save_page_state(
+    workspace_dir: Path,
+    page_idx: int,
+    cleaned_img: Image.Image,
+    text_blocks: list[dict],
+    page_w_pt: float,
+    page_h_pt: float,
+) -> None:
+    """Persist (inpainted bg, blocks, page meta) so the user can review/edit
+    later without re-running OCR + LaMa."""
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    bg_path = workspace_dir / f"page_{page_idx}_bg.png"
+    cleaned_img.save(str(bg_path), format="PNG", optimize=True)
+    json_path = workspace_dir / f"page_{page_idx}.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "page_idx": page_idx,
+                "page_w_pt": page_w_pt,
+                "page_h_pt": page_h_pt,
+                "blocks": text_blocks,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def update_page_blocks(workspace_dir: Path, page_idx: int, blocks: list[dict]) -> bool:
+    """Replace the saved blocks list for a page (after user edits)."""
+    json_path = workspace_dir / f"page_{page_idx}.json"
+    if not json_path.exists():
+        return False
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    data["blocks"] = blocks
+    json_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return True
+
+
+def load_page_state(workspace_dir: Path, page_idx: int) -> dict | None:
+    json_path = workspace_dir / f"page_{page_idx}.json"
+    if not json_path.exists():
+        return None
+    return json.loads(json_path.read_text(encoding="utf-8"))
+
+
+def ocr_region_from_bg(
+    workspace_dir: Path,
+    page_idx: int,
+    bbox_norm: list[float],
+    ocr_engine,
+) -> dict | None:
+    """OCR a single user-drawn region of the (inpainted) background.
+
+    The inpainted bg still contains text in regions OCR originally missed,
+    so OCR'ing the user-marked crop is the right move.
+
+    bbox_norm is [x, y, w, h] in 0..1 of the bg image. Returns a block dict
+    in the same shape as the auto-detected blocks, or None if nothing is
+    recognised.
+    """
+    json_path = workspace_dir / f"page_{page_idx}.json"
+    bg_path = workspace_dir / f"page_{page_idx}_bg.png"
+    if not json_path.exists() or not bg_path.exists():
+        return None
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    page_w_pt = float(data["page_w_pt"])
+
+    img = Image.open(bg_path).convert("RGB")
+    W, H = img.size
+    x_norm, y_norm, w_norm, h_norm = bbox_norm
+    left_px = max(0, int(x_norm * W))
+    top_px = max(0, int(y_norm * H))
+    right_px = min(W, int((x_norm + w_norm) * W))
+    bottom_px = min(H, int((y_norm + h_norm) * H))
+    if right_px <= left_px or bottom_px <= top_px:
+        return None
+
+    crop = img.crop((left_px, top_px, right_px, bottom_px))
+    crop_np = np.array(crop)
+    try:
+        ocr_result, _ = ocr_engine(crop_np)
+    except Exception:
+        ocr_result = None
+
+    texts = []
+    if ocr_result:
+        for item in ocr_result:
+            try:
+                _box, t, _s = item
+            except (ValueError, TypeError):
+                continue
+            if t and t.strip():
+                texts.append(t.strip())
+    combined = " ".join(texts).strip()
+    if not combined:
+        return None
+
+    px_per_pt = max(W / page_w_pt, 1e-6)
+    return {
+        "text": combined,
+        "x_pt": left_px / px_per_pt,
+        "y_pt": top_px / px_per_pt,
+        "w_pt": (right_px - left_px) / px_per_pt,
+        "h_pt": (bottom_px - top_px) / px_per_pt,
+        "score": 0.9,
+    }
+
+
+def assemble_pptx_from_workspace(workspace_dir: Path, output_path: Path) -> Path:
+    """Rebuild a PPTX from the per-page state saved during the original
+    conversion (plus any edits the user has made via the review API)."""
+    prs = Presentation()
+    prs.slide_width = SLIDE_W_EMU
+    prs.slide_height = SLIDE_H_EMU
+    blank_layout = prs.slide_layouts[6]
+
+    json_files = sorted(
+        workspace_dir.glob("page_*.json"),
+        key=lambda p: int(p.stem.split("_")[1]),
+    )
+    for jf in json_files:
+        try:
+            data = json.loads(jf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        page_idx = int(data.get("page_idx", -1))
+        if page_idx < 0:
+            continue
+        bg_path = workspace_dir / f"page_{page_idx}_bg.png"
+        if not bg_path.exists():
+            continue
+        page_w_pt = float(data["page_w_pt"])
+        page_h_pt = float(data["page_h_pt"])
+        blocks = data.get("blocks", []) or []
+
+        slide = prs.slides.add_slide(blank_layout)
+        left_pt, top_pt, fit_w_pt, fit_h_pt = _fit_image_to_slide(page_w_pt, page_h_pt)
+        scale_x = fit_w_pt / page_w_pt
+        scale_y = fit_h_pt / page_h_pt
+
+        slide.shapes.add_picture(
+            str(bg_path),
+            Pt(left_pt),
+            Pt(top_pt),
+            width=Pt(fit_w_pt),
+            height=Pt(fit_h_pt),
+        )
+        for block in blocks:
+            try:
+                _add_textbox_for_block(slide, block, left_pt, top_pt, scale_x, scale_y)
+            except Exception:
+                continue
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prs.save(str(output_path))
+    return output_path
+
+
 def _fit_image_to_slide(
     page_w_pt: float, page_h_pt: float
 ) -> tuple[float, float, float, float]:
@@ -262,6 +461,7 @@ def convert_pdf_to_pptx(
     converter: Optional[LocalConverter] = None,
     on_page_progress: Optional[Callable[[int, str, dict], None]] = None,
     cancel_flag: Optional[Callable[[], bool]] = None,
+    workspace_dir: Optional[Path] = None,
 ) -> Path:
     """Convert one PDF into an editable PPTX.
 
@@ -313,6 +513,17 @@ def convert_pdf_to_pptx(
             if on_page_progress:
                 on_page_progress(i, "inpainting", {"text_block_count": len(text_blocks)})
 
+            # Persist per-page state for review/regenerate, before assembling
+            # the slide. Doing it here means even if PPTX assembly fails later
+            # we still have the pieces.
+            if workspace_dir is not None:
+                try:
+                    _save_page_state(
+                        workspace_dir, i, cleaned, text_blocks, page_w_pt, page_h_pt
+                    )
+                except Exception:
+                    pass
+
             slide = prs.slides.add_slide(blank_layout)
 
             # Fix #1: letterbox the page image into the 16:9 slide
@@ -333,33 +544,9 @@ def convert_pdf_to_pptx(
                 height=Pt(fit_h_pt),
             )
 
-            # Fix #4: smaller font size factor
-            # Fix A1+A2: word_wrap=False so words like "LLM" don't break into
-            # L/L/M when the OCR bbox is tighter than the rendered glyph
-            # width. Also pad the bbox width by 12% to give breathing room
-            # when PowerPoint's default font is wider than the original.
-            from pptx.enum.text import MSO_AUTO_SIZE
             for block in text_blocks:
                 try:
-                    box_left = Pt(left_pt + block["x_pt"] * scale_x)
-                    box_top = Pt(top_pt + block["y_pt"] * scale_y)
-                    raw_w = block["w_pt"] * scale_x
-                    raw_h = block["h_pt"] * scale_y
-                    box_w = Pt(max(raw_w * 1.12, 12.0))
-                    box_h = Pt(max(raw_h * 1.05, 10.0))
-                    txBox = slide.shapes.add_textbox(box_left, box_top, box_w, box_h)
-                    tf = txBox.text_frame
-                    # word_wrap=False keeps single-line text intact even when
-                    # the bbox is slightly narrower than the rendered glyphs.
-                    tf.word_wrap = False
-                    try:
-                        tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
-                    except Exception:
-                        pass
-                    tf.text = block["text"]
-                    if block["h_pt"] > 0:
-                        font_pt = max(6.0, raw_h * 0.65)
-                        tf.paragraphs[0].font.size = Pt(font_pt)
+                    _add_textbox_for_block(slide, block, left_pt, top_pt, scale_x, scale_y)
                 except Exception:
                     continue
 

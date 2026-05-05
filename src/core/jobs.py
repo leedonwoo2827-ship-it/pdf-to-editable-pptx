@@ -18,6 +18,7 @@ class Job:
     pages: list[PageStatus] = field(default_factory=list)
     overall_state: Literal["idle", "running", "complete", "failed", "cancelled"] = "idle"
     output_path: Path | None = None
+    workspace_dir: Path | None = None  # Per-page bg.png + blocks.json for review
     error: str = ""
     cancel_flag: bool = False
 

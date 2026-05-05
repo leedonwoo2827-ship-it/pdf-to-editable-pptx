@@ -31,3 +31,33 @@ class JobStatus(BaseModel):
 class ProcessRequest(BaseModel):
     dpi: int = 200
     dilation: int = 15
+
+
+class ReviewBlock(BaseModel):
+    text: str
+    x_pt: float
+    y_pt: float
+    w_pt: float
+    h_pt: float
+    score: float = 0.9
+
+
+class ReviewPageState(BaseModel):
+    page_idx: int
+    page_w_pt: float
+    page_h_pt: float
+    blocks: list[ReviewBlock]
+
+
+class OcrRegionRequest(BaseModel):
+    bbox_norm: list[float]  # [x, y, w, h] in 0..1 of the page background image
+
+
+class OcrRegionResponse(BaseModel):
+    ok: bool
+    message: str = ""
+    block: ReviewBlock | None = None
+
+
+class SaveBlocksRequest(BaseModel):
+    blocks: list[ReviewBlock]

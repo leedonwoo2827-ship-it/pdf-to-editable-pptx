@@ -9,8 +9,13 @@ from fastapi.responses import FileResponse, Response
 
 from src.api.schemas import (
     JobStatus,
+    OcrRegionRequest,
+    OcrRegionResponse,
     PageStatus,
     ProcessRequest,
+    ReviewBlock,
+    ReviewPageState,
+    SaveBlocksRequest,
     UploadResponse,
 )
 from src.core import jobs, local_export, page_render
@@ -78,6 +83,7 @@ def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
         return
 
     output_path = settings.exports_dir / f"{job.id}_{Path(job.filename).stem}_Editable.pptx"
+    job.workspace_dir = settings.exports_dir / f"{job.id}_workspace"
 
     def on_page_progress(idx: int, state: str, info: dict) -> None:
         if idx < 0 or idx >= len(job.pages):
@@ -107,6 +113,7 @@ def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
             converter=converter,
             on_page_progress=on_page_progress,
             cancel_flag=cancel_flag,
+            workspace_dir=job.workspace_dir,
         )
         job.output_path = output_path
         job.overall_state = "complete"
@@ -174,3 +181,73 @@ def result(job_id: str):
         ),
         filename=download_name,
     )
+
+
+# --- Review / refine after conversion -------------------------------------
+
+def _require_workspace(job_id: str):
+    job = jobs.store.get(job_id)
+    if not job:
+        raise HTTPException(404, "Unknown job")
+    if not job.workspace_dir or not job.workspace_dir.exists():
+        raise HTTPException(404, "No reviewable workspace for this job (run conversion first).")
+    return job
+
+
+@router.get("/review/{job_id}/{page_idx}/bg.png")
+def review_bg(job_id: str, page_idx: int):
+    job = _require_workspace(job_id)
+    bg = job.workspace_dir / f"page_{page_idx}_bg.png"
+    if not bg.exists():
+        raise HTTPException(404, "Page not converted yet")
+    return FileResponse(str(bg), media_type="image/png")
+
+
+@router.get("/review/{job_id}/{page_idx}/state", response_model=ReviewPageState)
+def review_state(job_id: str, page_idx: int) -> ReviewPageState:
+    job = _require_workspace(job_id)
+    data = local_export.load_page_state(job.workspace_dir, page_idx)
+    if data is None:
+        raise HTTPException(404, "Page not converted yet")
+    return ReviewPageState.model_validate(data)
+
+
+@router.post("/review/{job_id}/{page_idx}/blocks")
+def review_save_blocks(job_id: str, page_idx: int, req: SaveBlocksRequest):
+    job = _require_workspace(job_id)
+    blocks = [b.model_dump() for b in req.blocks]
+    if not local_export.update_page_blocks(job.workspace_dir, page_idx, blocks):
+        raise HTTPException(500, "Failed to save blocks")
+    return {"ok": True, "count": len(blocks)}
+
+
+@router.post("/review/{job_id}/{page_idx}/ocr-region", response_model=OcrRegionResponse)
+def review_ocr_region(
+    job_id: str, page_idx: int, req: OcrRegionRequest
+) -> OcrRegionResponse:
+    job = _require_workspace(job_id)
+    converter = local_export.get_shared_converter()
+    converter.initialize_models()
+    if converter.ocr_engine is None:
+        raise HTTPException(500, "OCR engine not initialized")
+    block = local_export.ocr_region_from_bg(
+        job.workspace_dir, page_idx, list(req.bbox_norm), converter.ocr_engine
+    )
+    if block is None:
+        return OcrRegionResponse(ok=False, message="No text detected in that region.")
+    return OcrRegionResponse(ok=True, block=ReviewBlock.model_validate(block))
+
+
+@router.post("/review/{job_id}/regenerate")
+def review_regenerate(job_id: str):
+    job = _require_workspace(job_id)
+    new_output = (
+        settings.exports_dir
+        / f"{job.id}_{Path(job.filename).stem}_Editable_v2.pptx"
+    )
+    try:
+        local_export.assemble_pptx_from_workspace(job.workspace_dir, new_output)
+    except Exception as exc:
+        raise HTTPException(500, f"Regenerate failed: {exc}") from exc
+    job.output_path = new_output
+    return {"ok": True}

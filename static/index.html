@@ -46,12 +46,23 @@
             Cancel
         </button>
 
-        <a x-show="complete && outputReady" :href="`/api/result/${job?.job_id}`"
+        <a x-show="complete && outputReady && !review.active" :href="`/api/result/${job?.job_id}`"
            class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1.5 rounded shadow">
             Download .pptx
         </a>
 
-        <button x-show="job" @click="reset()" class="text-slate-500 hover:text-slate-900 text-sm px-3 py-1.5">
+        <button x-show="complete && !review.active" @click="enterReview()"
+                class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-1.5 rounded shadow"
+                title="Review and refine the OCR result before downloading">
+            Refine in browser
+        </button>
+
+        <button x-show="review.active" @click="exitReview()"
+                class="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5">
+            ← Back
+        </button>
+
+        <button x-show="job && !review.active" @click="reset()" class="text-slate-500 hover:text-slate-900 text-sm px-3 py-1.5">
             New PDF
         </button>
     </header>
@@ -76,8 +87,122 @@
         </div>
     </main>
 
+    <!-- Review mode: refine OCR per page, then re-export -->
+    <main x-show="review.active" class="flex-1 grid grid-rows-[auto_1fr] overflow-hidden">
+        <div class="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+            <button @click="reviewPrev()" :disabled="review.currentPage === 0"
+                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">← Prev</button>
+            <span class="text-sm font-medium" x-text="`Page ${review.currentPage + 1} / ${job?.page_count}`"></span>
+            <button @click="reviewNext()" :disabled="review.currentPage >= (job?.page_count || 1) - 1"
+                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">Next →</button>
+            <span class="grow"></span>
+            <span class="text-xs text-slate-500" x-text="review.dirty ? 'Unsaved changes' : 'No pending edits'"></span>
+            <button @click="saveCurrentPage()" :disabled="!review.dirty || review.saving"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1 rounded disabled:opacity-50">
+                <span x-show="!review.saving">Save page edits</span>
+                <span x-show="review.saving">Saving…</span>
+            </button>
+            <button @click="regenerateAndDownload()" :disabled="review.regenerating"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1 rounded shadow disabled:opacity-50">
+                <span x-show="!review.regenerating">Re-export & download</span>
+                <span x-show="review.regenerating">Building…</span>
+            </button>
+        </div>
+
+        <div class="grid grid-cols-[1fr_320px] overflow-hidden">
+            <!-- Center: SVG editor on top of the inpainted bg -->
+            <section class="overflow-auto bg-slate-200 p-4 flex items-start justify-center">
+                <div class="relative bg-white shadow-lg" :style="`width: ${review.displayW}px`" x-show="review.bgWidth > 0">
+                    <img :src="review.bgUrl" class="block w-full h-auto" @load="onReviewBgLoaded($event)" draggable="false" />
+                    <svg class="absolute top-0 left-0 w-full h-full" :viewBox="`0 0 ${review.bgWidth} ${review.bgHeight}`"
+                         preserveAspectRatio="none"
+                         @mousedown="reviewMouseDown($event)"
+                         @mousemove="reviewMouseMove($event)"
+                         @mouseup="reviewMouseUp($event)"
+                         @mouseleave="reviewMouseUp($event)">
+                        <!-- Existing blocks -->
+                        <template x-for="(b, idx) in review.blocks" :key="idx">
+                            <g @click.stop="selectBlock(idx)" class="cursor-pointer">
+                                <rect
+                                    :x="b._px.x" :y="b._px.y"
+                                    :width="b._px.w" :height="b._px.h"
+                                    :fill="review.selectedIdx === idx ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.10)'"
+                                    :stroke="review.selectedIdx === idx ? '#2563eb' : '#10b981'"
+                                    :stroke-width="review.selectedIdx === idx ? 4 : 2" />
+                                <text :x="b._px.x + 6" :y="b._px.y + 18"
+                                      font-size="14" font-family="sans-serif" fill="#065f46"
+                                      x-text="(idx+1) + '. ' + (b.text || '').slice(0, 28)"></text>
+                            </g>
+                        </template>
+                        <!-- Pending (just drawn, not yet OCR'd) -->
+                        <rect x-show="review.pending"
+                              :x="review.pending?.x" :y="review.pending?.y"
+                              :width="review.pending?.w" :height="review.pending?.h"
+                              fill="rgba(245,158,11,0.18)" stroke="#f59e0b" stroke-width="3" />
+                        <!-- Live drawing -->
+                        <rect x-show="review.drawing"
+                              :x="review.drawing?.x" :y="review.drawing?.y"
+                              :width="review.drawing?.w" :height="review.drawing?.h"
+                              fill="rgba(59,130,246,0.10)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4" />
+                    </svg>
+                </div>
+                <div x-show="!review.bgWidth" class="text-slate-500 text-sm">Loading page…</div>
+            </section>
+
+            <!-- Right side: properties / pending region panel -->
+            <aside class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
+                <div class="text-xs uppercase tracking-wide text-slate-400">
+                    Click an existing box to edit, or drag on empty area to add a new one.
+                </div>
+
+                <!-- Selected existing block -->
+                <div x-show="review.selectedIdx !== null && review.blocks[review.selectedIdx]" class="space-y-2 border border-slate-200 rounded p-3">
+                    <div class="text-sm font-semibold text-slate-700">
+                        Block #<span x-text="review.selectedIdx + 1"></span>
+                    </div>
+                    <label class="block text-xs text-slate-600">Text</label>
+                    <textarea x-model="review.blocks[review.selectedIdx].text"
+                              @input="review.dirty = true"
+                              rows="3"
+                              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"></textarea>
+                    <div class="flex gap-2">
+                        <button @click="deleteSelected()" class="flex-1 text-sm bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded px-3 py-1">Delete</button>
+                        <button @click="review.selectedIdx = null" class="flex-1 text-sm bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-3 py-1">Deselect</button>
+                    </div>
+                </div>
+
+                <!-- Pending newly-drawn region -->
+                <div x-show="review.pending" class="space-y-2 border border-amber-300 bg-amber-50 rounded p-3">
+                    <div class="text-sm font-semibold text-amber-800">New region</div>
+                    <button @click="ocrPending()" :disabled="review.ocring"
+                            class="w-full text-sm bg-amber-600 hover:bg-amber-700 text-white rounded px-3 py-1.5 disabled:opacity-50">
+                        <span x-show="!review.ocring">🔍 Run OCR on this region</span>
+                        <span x-show="review.ocring">OCR running…</span>
+                    </button>
+                    <label class="block text-xs text-amber-800 mt-2">Or type the text manually:</label>
+                    <input x-model="review.pendingText" type="text" placeholder="text"
+                           class="w-full border border-amber-300 rounded px-2 py-1 text-sm" />
+                    <div class="flex gap-2">
+                        <button @click="addPendingManual()"
+                                :disabled="!review.pendingText.trim()"
+                                class="flex-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-50">Add as block</button>
+                        <button @click="cancelPending()"
+                                class="flex-1 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-3 py-1">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500 pt-2 border-t border-slate-200">
+                    <p>• <span class="text-emerald-700">Green</span> = existing detected boxes</p>
+                    <p>• <span class="text-blue-600">Blue</span> = currently selected</p>
+                    <p>• <span class="text-amber-600">Orange</span> = newly drawn (not yet added)</p>
+                    <p class="mt-2">Save edits per page, then click <b>Re-export &amp; download</b> when finished.</p>
+                </div>
+            </aside>
+        </div>
+    </main>
+
     <!-- Working state -->
-    <main x-show="job" class="flex-1 grid grid-cols-[260px_1fr] overflow-hidden">
+    <main x-show="job && !review.active" class="flex-1 grid grid-cols-[260px_1fr] overflow-hidden">
 
         <!-- Left: page list with status -->
         <aside class="bg-white border-r border-slate-200 overflow-y-auto p-2 space-y-1">

@@ -53,13 +53,13 @@
 
         <button x-show="complete && !review.active" @click="enterReview()"
                 class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-1.5 rounded shadow"
-                title="Review and refine the OCR result before downloading">
-            Refine in browser
+                title="다운로드 전에 OCR 결과를 직접 보정">
+            🖌 브라우저에서 보정
         </button>
 
         <button x-show="review.active" @click="exitReview()"
                 class="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5">
-            ← Back
+            ← 돌아가기
         </button>
 
         <button x-show="job && !review.active" @click="reset()" class="text-slate-500 hover:text-slate-900 text-sm px-3 py-1.5">
@@ -91,21 +91,30 @@
     <main x-show="review.active" class="flex-1 grid grid-rows-[auto_1fr] overflow-hidden">
         <div class="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
             <button @click="reviewPrev()" :disabled="review.currentPage === 0"
-                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">← Prev</button>
-            <span class="text-sm font-medium" x-text="`Page ${review.currentPage + 1} / ${job?.page_count}`"></span>
+                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">← 이전</button>
+            <span class="text-sm font-medium" x-text="`${review.currentPage + 1} / ${job?.page_count} 페이지`"></span>
             <button @click="reviewNext()" :disabled="review.currentPage >= (job?.page_count || 1) - 1"
-                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">Next →</button>
+                    class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">다음 →</button>
+            <span class="mx-3 text-slate-300">|</span>
+            <span class="text-xs text-slate-500">도구:</span>
+            <button @click="setReviewTool('rect')"
+                    :class="review.tool === 'rect' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                    class="text-sm px-3 py-1 rounded">⬛ 사각형</button>
+            <button @click="setReviewTool('brush')"
+                    :class="review.tool === 'brush' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                    class="text-sm px-3 py-1 rounded">🖌 색칠</button>
+
             <span class="grow"></span>
-            <span class="text-xs text-slate-500" x-text="review.dirty ? 'Unsaved changes' : 'No pending edits'"></span>
+            <span class="text-xs text-slate-500" x-text="review.dirty ? '저장되지 않은 변경 있음' : '변경 사항 없음'"></span>
             <button @click="saveCurrentPage()" :disabled="!review.dirty || review.saving"
                     class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1 rounded disabled:opacity-50">
-                <span x-show="!review.saving">Save page edits</span>
-                <span x-show="review.saving">Saving…</span>
+                <span x-show="!review.saving">페이지 저장</span>
+                <span x-show="review.saving">저장 중…</span>
             </button>
             <button @click="regenerateAndDownload()" :disabled="review.regenerating"
                     class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1 rounded shadow disabled:opacity-50">
-                <span x-show="!review.regenerating">Re-export & download</span>
-                <span x-show="review.regenerating">Building…</span>
+                <span x-show="!review.regenerating">재출력 &amp; 다운로드</span>
+                <span x-show="review.regenerating">생성 중…</span>
             </button>
         </div>
 
@@ -120,9 +129,10 @@
                          @mousemove="reviewMouseMove($event)"
                          @mouseup="reviewMouseUp($event)"
                          @mouseleave="reviewMouseUp($event)">
-                        <!-- Existing blocks -->
+                        <!-- 기존 검출된 블록 -->
                         <template x-for="(b, idx) in review.blocks" :key="idx">
-                            <g @click.stop="selectBlock(idx)" class="cursor-pointer">
+                            <g @mousedown.stop="blockMouseDown(idx, $event)"
+                               :class="review.movingBlock?.idx === idx ? 'cursor-grabbing' : 'cursor-grab'">
                                 <rect
                                     :x="b._px.x" :y="b._px.y"
                                     :width="b._px.w" :height="b._px.h"
@@ -134,68 +144,77 @@
                                       x-text="(idx+1) + '. ' + (b.text || '').slice(0, 28)"></text>
                             </g>
                         </template>
-                        <!-- Pending (just drawn, not yet OCR'd) -->
+                        <!-- 새로 그린 영역 (OCR 대기) -->
                         <rect x-show="review.pending"
                               :x="review.pending?.x" :y="review.pending?.y"
                               :width="review.pending?.w" :height="review.pending?.h"
                               fill="rgba(245,158,11,0.18)" stroke="#f59e0b" stroke-width="3" />
-                        <!-- Live drawing -->
+                        <!-- 사각형 도구로 드래그 중 -->
                         <rect x-show="review.drawing"
                               :x="review.drawing?.x" :y="review.drawing?.y"
                               :width="review.drawing?.w" :height="review.drawing?.h"
                               fill="rgba(59,130,246,0.10)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4" />
+                        <!-- 브러시 도구로 색칠 중 -->
+                        <polyline x-show="review.brushPoints.length > 0"
+                                  :points="review.brushPoints.map(p => p.x + ',' + p.y).join(' ')"
+                                  stroke="rgba(245,158,11,0.5)" stroke-width="22"
+                                  stroke-linecap="round" stroke-linejoin="round"
+                                  fill="none" pointer-events="none" />
                     </svg>
                 </div>
                 <div x-show="!review.bgWidth" class="text-slate-500 text-sm">Loading page…</div>
             </section>
 
-            <!-- Right side: properties / pending region panel -->
+            <!-- 우측: 선택된 블록 편집 / 새 영역 OCR 패널 -->
             <aside class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
                 <div class="text-xs uppercase tracking-wide text-slate-400">
-                    Click an existing box to edit, or drag on empty area to add a new one.
+                    기존 박스를 클릭/드래그해서 이동·편집, 빈 영역을 드래그하거나 색칠해서 새 영역 추가
                 </div>
 
-                <!-- Selected existing block -->
+                <!-- 기존 블록 선택 시 -->
                 <div x-show="review.selectedIdx !== null && review.blocks[review.selectedIdx]" class="space-y-2 border border-slate-200 rounded p-3">
                     <div class="text-sm font-semibold text-slate-700">
-                        Block #<span x-text="review.selectedIdx + 1"></span>
+                        블록 #<span x-text="review.selectedIdx + 1"></span>
                     </div>
-                    <label class="block text-xs text-slate-600">Text</label>
+                    <label class="block text-xs text-slate-600">텍스트</label>
                     <textarea x-model="review.blocks[review.selectedIdx].text"
                               @input="review.dirty = true"
                               rows="3"
                               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"></textarea>
                     <div class="flex gap-2">
-                        <button @click="deleteSelected()" class="flex-1 text-sm bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded px-3 py-1">Delete</button>
-                        <button @click="review.selectedIdx = null" class="flex-1 text-sm bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-3 py-1">Deselect</button>
+                        <button @click="deleteSelected()" class="flex-1 text-sm bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded px-3 py-1">삭제</button>
+                        <button @click="review.selectedIdx = null" class="flex-1 text-sm bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-3 py-1">선택 해제</button>
                     </div>
+                    <p class="text-xs text-slate-500 mt-1">박스 이동: 박스를 마우스로 끌어주세요.</p>
                 </div>
 
-                <!-- Pending newly-drawn region -->
+                <!-- 새로 그린 영역 -->
                 <div x-show="review.pending" class="space-y-2 border border-amber-300 bg-amber-50 rounded p-3">
-                    <div class="text-sm font-semibold text-amber-800">New region</div>
+                    <div class="text-sm font-semibold text-amber-800">새 영역</div>
                     <button @click="ocrPending()" :disabled="review.ocring"
                             class="w-full text-sm bg-amber-600 hover:bg-amber-700 text-white rounded px-3 py-1.5 disabled:opacity-50">
-                        <span x-show="!review.ocring">🔍 Run OCR on this region</span>
-                        <span x-show="review.ocring">OCR running…</span>
+                        <span x-show="!review.ocring">🔍 이 영역에 OCR 실행</span>
+                        <span x-show="review.ocring">OCR 실행 중…</span>
                     </button>
-                    <label class="block text-xs text-amber-800 mt-2">Or type the text manually:</label>
-                    <input x-model="review.pendingText" type="text" placeholder="text"
+                    <label class="block text-xs text-amber-800 mt-2">또는 텍스트 직접 입력:</label>
+                    <input x-model="review.pendingText" type="text" placeholder="텍스트"
                            class="w-full border border-amber-300 rounded px-2 py-1 text-sm" />
                     <div class="flex gap-2">
                         <button @click="addPendingManual()"
                                 :disabled="!review.pendingText.trim()"
-                                class="flex-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-50">Add as block</button>
+                                class="flex-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-50">블록으로 추가</button>
                         <button @click="cancelPending()"
-                                class="flex-1 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-3 py-1">Cancel</button>
+                                class="flex-1 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded px-3 py-1">취소</button>
                     </div>
                 </div>
 
-                <div class="text-xs text-slate-500 pt-2 border-t border-slate-200">
-                    <p>• <span class="text-emerald-700">Green</span> = existing detected boxes</p>
-                    <p>• <span class="text-blue-600">Blue</span> = currently selected</p>
-                    <p>• <span class="text-amber-600">Orange</span> = newly drawn (not yet added)</p>
-                    <p class="mt-2">Save edits per page, then click <b>Re-export &amp; download</b> when finished.</p>
+                <div class="text-xs text-slate-500 pt-2 border-t border-slate-200 space-y-1">
+                    <p>• <span class="text-emerald-700 font-medium">초록</span> = 자동 검출된 기존 박스</p>
+                    <p>• <span class="text-blue-600 font-medium">파랑</span> = 현재 선택된 박스</p>
+                    <p>• <span class="text-amber-600 font-medium">주황</span> = 새로 그린 영역 (아직 추가 안됨)</p>
+                    <p class="pt-2">박스 위에서 마우스를 끌면 <b>이동</b>, 빈 영역에서 끌면 <b>새 영역 그리기</b>.
+                       상단의 🖌 <b>색칠</b> 도구로 바꾸면 자유롭게 칠해서 영역을 만들 수 있습니다.</p>
+                    <p>각 페이지마다 <b>저장</b>한 뒤, 마지막에 <b>재출력 &amp; 다운로드</b>를 누르세요.</p>
                 </div>
             </aside>
         </div>

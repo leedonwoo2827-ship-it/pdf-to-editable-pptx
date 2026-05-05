@@ -16,19 +16,22 @@ function app() {
             bgUrl: '',
             bgWidth: 0,
             bgHeight: 0,
-            displayW: 1100,           // CSS pixel width for the editor canvas
+            displayW: 1100,           // 에디터 캔버스 CSS 픽셀 너비
             blocks: [],               // [{text, x_pt, y_pt, w_pt, h_pt, score, _px:{x,y,w,h}}]
             pageWPt: 1,
             pageHPt: 1,
             selectedIdx: null,
-            drawing: null,            // {x, y, w, h} in image-pixel units while dragging
-            pending: null,            // {x, y, w, h} after drag finishes
+            tool: 'rect',             // 'rect' or 'brush'
+            drawing: null,            // 사각형 드래그 중인 영역
+            brushPoints: [],          // 브러시 모드에서 현재 칠하는 점들
+            pending: null,            // 드래그/브러시 종료 후 OCR 대기 영역
             pendingText: '',
             ocring: false,
             saving: false,
             regenerating: false,
             dirty: false,
             _dragStart: null,
+            movingBlock: null,        // 기존 박스 드래그 이동 상태 {idx, startX, startY, origX_pt, origY_pt, moved}
         },
 
         async init() {
@@ -296,9 +299,22 @@ function app() {
             this.review.dirty = true;
         },
 
-        // ----- Drag-to-draw new region -----
+        // ----- Tool toggle (rect / brush) -----
+        setReviewTool(name) {
+            this.review.tool = name;
+            this.review.drawing = null;
+            this.review.brushPoints = [];
+            this.review._dragStart = null;
+        },
+
+        // ----- 좌표 변환 -----
         _svgPoint(event) {
-            const svg = event.currentTarget;
+            // svg가 아닌 자식 element에서 발생한 mousedown도 이 함수로 처리되므로
+            // currentTarget 대신 closest('svg')을 사용
+            const svg = (event.currentTarget?.tagName === 'svg')
+                ? event.currentTarget
+                : event.target.closest('svg');
+            if (!svg) return {x: 0, y: 0};
             const rect = svg.getBoundingClientRect();
             const W = this.review.bgWidth || 1;
             const H = this.review.bgHeight || 1;
@@ -307,38 +323,113 @@ function app() {
             return {x, y};
         },
 
-        reviewMouseDown(event) {
-            if (event.target.tagName === 'rect' || event.target.tagName === 'text') {
-                // clicking an existing block — let the @click on <g> handle it
-                return;
-            }
+        // ----- 기존 박스 드래그 이동 시작 -----
+        blockMouseDown(idx, event) {
+            event.stopPropagation();
             const p = this._svgPoint(event);
-            this.review._dragStart = p;
-            this.review.drawing = {x: p.x, y: p.y, w: 0, h: 0};
+            this.review.movingBlock = {
+                idx,
+                startX: p.x,
+                startY: p.y,
+                origX_pt: this.review.blocks[idx].x_pt,
+                origY_pt: this.review.blocks[idx].y_pt,
+                moved: false,
+            };
+            this.review.selectedIdx = idx;
             this.review.pending = null;
+        },
+
+        // ----- SVG의 빈 영역에서 mousedown -----
+        reviewMouseDown(event) {
+            // 기존 박스(rect/text/g) 위에서 mousedown은 blockMouseDown이 먼저 잡음
+            if (this.review.movingBlock) return;
+
+            const p = this._svgPoint(event);
             this.review.selectedIdx = null;
+            this.review.pending = null;
+
+            if (this.review.tool === 'brush') {
+                this.review.brushPoints = [p];
+            } else {
+                this.review._dragStart = p;
+                this.review.drawing = {x: p.x, y: p.y, w: 0, h: 0};
+            }
         },
 
         reviewMouseMove(event) {
-            if (!this.review._dragStart) return;
-            const p = this._svgPoint(event);
-            const s = this.review._dragStart;
-            this.review.drawing = {
-                x: Math.min(s.x, p.x),
-                y: Math.min(s.y, p.y),
-                w: Math.abs(p.x - s.x),
-                h: Math.abs(p.y - s.y),
-            };
+            // 1) 기존 박스 이동 중
+            const m = this.review.movingBlock;
+            if (m) {
+                const p = this._svgPoint(event);
+                const dx = p.x - m.startX;
+                const dy = p.y - m.startY;
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                    m.moved = true;
+                    const sx_pt_per_px = this.review.pageWPt / (this.review.bgWidth || 1);
+                    const sy_pt_per_px = this.review.pageHPt / (this.review.bgHeight || 1);
+                    const sx_px_per_pt = (this.review.bgWidth || 1) / this.review.pageWPt;
+                    const sy_px_per_pt = (this.review.bgHeight || 1) / this.review.pageHPt;
+                    const block = this.review.blocks[m.idx];
+                    block.x_pt = m.origX_pt + dx * sx_pt_per_px;
+                    block.y_pt = m.origY_pt + dy * sy_pt_per_px;
+                    block._px.x = block.x_pt * sx_px_per_pt;
+                    block._px.y = block.y_pt * sy_px_per_pt;
+                }
+                return;
+            }
+            // 2) 브러시 칠하는 중
+            if (this.review.brushPoints.length > 0) {
+                const p = this._svgPoint(event);
+                this.review.brushPoints.push(p);
+                return;
+            }
+            // 3) 사각형 드래그 중
+            if (this.review._dragStart) {
+                const p = this._svgPoint(event);
+                const s = this.review._dragStart;
+                this.review.drawing = {
+                    x: Math.min(s.x, p.x),
+                    y: Math.min(s.y, p.y),
+                    w: Math.abs(p.x - s.x),
+                    h: Math.abs(p.y - s.y),
+                };
+            }
         },
 
         reviewMouseUp() {
-            if (!this.review._dragStart) return;
-            const d = this.review.drawing;
-            this.review._dragStart = null;
-            this.review.drawing = null;
-            if (!d || d.w < 8 || d.h < 8) return;  // ignore tiny drags
-            this.review.pending = d;
-            this.review.pendingText = '';
+            // 1) 기존 박스 이동 종료
+            const m = this.review.movingBlock;
+            if (m) {
+                if (m.moved) this.review.dirty = true;
+                this.review.movingBlock = null;
+                return;
+            }
+            // 2) 브러시 종료 → 칠한 영역의 bounding box를 OCR 후보로
+            if (this.review.brushPoints.length > 0) {
+                const pts = this.review.brushPoints;
+                this.review.brushPoints = [];
+                if (pts.length < 2) return;
+                const xs = pts.map(p => p.x);
+                const ys = pts.map(p => p.y);
+                const PAD = 12;
+                const x = Math.max(0, Math.min(...xs) - PAD);
+                const y = Math.max(0, Math.min(...ys) - PAD);
+                const w = (Math.max(...xs) - Math.min(...xs)) + 2 * PAD;
+                const h = (Math.max(...ys) - Math.min(...ys)) + 2 * PAD;
+                if (w < 16 || h < 16) return;
+                this.review.pending = {x, y, w, h};
+                this.review.pendingText = '';
+                return;
+            }
+            // 3) 사각형 종료
+            if (this.review._dragStart) {
+                const d = this.review.drawing;
+                this.review._dragStart = null;
+                this.review.drawing = null;
+                if (!d || d.w < 8 || d.h < 8) return;
+                this.review.pending = d;
+                this.review.pendingText = '';
+            }
         },
 
         cancelPending() {

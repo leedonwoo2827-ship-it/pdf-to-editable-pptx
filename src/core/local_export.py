@@ -42,6 +42,38 @@ def _is_korean(s: str) -> bool:
     return any("가" <= ch <= "힣" for ch in s)
 
 
+def _bbox_to_rect(box) -> tuple[float, float, float, float]:
+    xs = [p[0] for p in box]
+    ys = [p[1] for p in box]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _bbox_iou(box1, box2) -> float:
+    """Axis-aligned IoU on quadrilateral bboxes (uses bounding rectangle)."""
+    x1a, y1a, x2a, y2a = _bbox_to_rect(box1)
+    x1b, y1b, x2b, y2b = _bbox_to_rect(box2)
+    ix1 = max(x1a, x1b)
+    iy1 = max(y1a, y1b)
+    ix2 = min(x2a, x2b)
+    iy2 = min(y2a, y2b)
+    if ix2 < ix1 or iy2 < iy1:
+        return 0.0
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    a = max((x2a - x1a) * (y2a - y1a), 1.0)
+    b = max((x2b - x1b) * (y2b - y1b), 1.0)
+    return inter / (a + b - inter)
+
+
+def _dedupe_against(new_results: list, existing_results: list, iou_thresh: float = 0.3) -> list:
+    """Drop new_results that overlap (>iou_thresh) with any existing one."""
+    kept = []
+    for r in new_results:
+        if any(_bbox_iou(r[0], e[0]) > iou_thresh for e in existing_results):
+            continue
+        kept.append(r)
+    return kept
+
+
 def _filter_ocr_results(ocr_result, page_w_px: int, page_h_px: int) -> list:
     """Drop noisy OCR results (Fix #3)."""
     if not ocr_result:
@@ -121,9 +153,32 @@ class LocalConverter:
         img_np = np.array(pil_image)
         page_h_px, page_w_px = img_np.shape[:2]
 
-        # OCR
+        # ---- Pass 1: standard OCR ----
         ocr_result, _ = self.ocr_engine(img_np)
         ocr_filtered = _filter_ocr_results(ocr_result, page_w_px, page_h_px)
+
+        # ---- Fix B: Pass 2 — whiten the regions Pass 1 covered, then OCR
+        # the remainder. RapidOCR re-detection on a sparser image often
+        # picks up small/stylised text that Pass 1 missed (chart labels,
+        # arrow callouts, decorative headings).
+        if ocr_filtered:
+            cover = np.zeros(img_np.shape[:2], dtype=np.uint8)
+            for box, _t, _s in ocr_filtered:
+                poly = np.array(box, dtype=np.float32)
+                ctr = np.mean(poly, axis=0)
+                expanded = ctr + (poly - ctr) * 1.20  # 20% expansion to catch tails
+                pts = expanded.astype(np.int32).reshape((-1, 1, 2))
+                cv2.fillPoly(cover, [pts], 255)
+            img_pass2 = img_np.copy()
+            img_pass2[cover > 0] = 255  # whiten covered regions
+            try:
+                ocr_result_2, _ = self.ocr_engine(img_pass2)
+                ocr_filtered_2 = _filter_ocr_results(ocr_result_2, page_w_px, page_h_px)
+                # Drop pass-2 hits that overlap an existing pass-1 hit.
+                ocr_filtered_2 = _dedupe_against(ocr_filtered_2, ocr_filtered, iou_thresh=0.2)
+                ocr_filtered = ocr_filtered + ocr_filtered_2
+            except Exception:
+                pass  # Pass 2 is best-effort; never fail the page over it.
 
         mask = np.zeros(img_np.shape[:2], dtype=np.uint8)
         text_blocks: list[dict] = []
@@ -175,7 +230,7 @@ class LocalConverter:
 
 
 def _fit_image_to_slide(
-    img: Image.Image, page_w_pt: float, page_h_pt: float
+    page_w_pt: float, page_h_pt: float
 ) -> tuple[float, float, float, float]:
     """Fix #1: fit page image into 16:9 slide (letterbox). Returns (left_pt, top_pt, w_pt, h_pt)."""
     page_aspect = page_w_pt / page_h_pt
@@ -218,7 +273,6 @@ def convert_pdf_to_pptx(
     blank_layout = prs.slide_layouts[6]
 
     with pdfplumber.open(str(pdf_path)) as pdf_file:
-        total = len(pdf_file.pages)
         for i, page in enumerate(pdf_file.pages):
             if cancel_flag and cancel_flag():
                 raise RuntimeError("Cancelled by user")
@@ -254,7 +308,7 @@ def convert_pdf_to_pptx(
 
             # Fix #1: letterbox the page image into the 16:9 slide
             left_pt, top_pt, fit_w_pt, fit_h_pt = _fit_image_to_slide(
-                cleaned, page_w_pt, page_h_pt
+                page_w_pt, page_h_pt
             )
             scale_x = fit_w_pt / page_w_pt
             scale_y = fit_h_pt / page_h_pt
@@ -271,18 +325,31 @@ def convert_pdf_to_pptx(
             )
 
             # Fix #4: smaller font size factor
+            # Fix A1+A2: word_wrap=False so words like "LLM" don't break into
+            # L/L/M when the OCR bbox is tighter than the rendered glyph
+            # width. Also pad the bbox width by 12% to give breathing room
+            # when PowerPoint's default font is wider than the original.
+            from pptx.enum.text import MSO_AUTO_SIZE
             for block in text_blocks:
                 try:
                     box_left = Pt(left_pt + block["x_pt"] * scale_x)
                     box_top = Pt(top_pt + block["y_pt"] * scale_y)
-                    box_w = Pt(max(block["w_pt"] * scale_x, 8.0))
-                    box_h = Pt(max(block["h_pt"] * scale_y, 8.0))
+                    raw_w = block["w_pt"] * scale_x
+                    raw_h = block["h_pt"] * scale_y
+                    box_w = Pt(max(raw_w * 1.12, 12.0))
+                    box_h = Pt(max(raw_h * 1.05, 10.0))
                     txBox = slide.shapes.add_textbox(box_left, box_top, box_w, box_h)
                     tf = txBox.text_frame
-                    tf.word_wrap = True
+                    # word_wrap=False keeps single-line text intact even when
+                    # the bbox is slightly narrower than the rendered glyphs.
+                    tf.word_wrap = False
+                    try:
+                        tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+                    except Exception:
+                        pass
                     tf.text = block["text"]
                     if block["h_pt"] > 0:
-                        font_pt = max(6.0, block["h_pt"] * scale_y * 0.65)
+                        font_pt = max(6.0, raw_h * 0.65)
                         tf.paragraphs[0].font.size = Pt(font_pt)
                 except Exception:
                     continue

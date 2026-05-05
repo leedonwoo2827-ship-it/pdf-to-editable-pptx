@@ -1,23 +1,27 @@
-"""Quick page-to-PNG rendering for browser thumbnails (independent of conversion)."""
+"""Quick page-to-PNG rendering for browser thumbnails.
+
+Uses PyMuPDF (fitz) instead of pdfplumber/pypdfium2 because pypdfium2 is
+not thread-safe — when the browser requests several thumbnails in parallel,
+pypdfium2 crashes the worker process with native access violations. PyMuPDF
+allows independent Document instances per call which is safe.
+"""
 from __future__ import annotations
 
-from io import BytesIO
 from pathlib import Path
 
-import pdfplumber
+import fitz  # PyMuPDF
 
 
 def page_count(pdf_path: Path) -> int:
-    with pdfplumber.open(str(pdf_path)) as f:
-        return len(f.pages)
+    with fitz.open(str(pdf_path)) as doc:
+        return doc.page_count
 
 
 def render_thumbnail(pdf_path: Path, page_idx: int, dpi: int = 96) -> bytes:
-    """Lightweight thumbnail render for the UI. Lower DPI than conversion."""
-    with pdfplumber.open(str(pdf_path)) as f:
-        page = f.pages[page_idx]
-        page_image = page.to_image(resolution=dpi)
-        pil = page_image.original
-        buf = BytesIO()
-        pil.save(buf, format="PNG", optimize=True)
-        return buf.getvalue()
+    """Render a single page to PNG bytes. One fresh fitz handle per call,
+    so concurrent requests do not share state."""
+    with fitz.open(str(pdf_path)) as doc:
+        page = doc.load_page(page_idx)
+        scale = dpi / 72.0
+        pm = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        return pm.tobytes("png")

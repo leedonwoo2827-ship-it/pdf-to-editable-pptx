@@ -37,6 +37,12 @@ MIN_OCR_SCORE = 0.5
 MIN_TEXT_LEN = 2  # at least 2 chars unless korean (single hangul ok)
 MIN_BBOX_AREA_RATIO = 1e-4  # bbox_w * bbox_h / page_w * page_h
 
+# pdfplumber uses pypdfium2 under the hood, which is NOT thread-safe.
+# We serialize all pdfplumber.open() calls in this module so that the
+# conversion thread doesn't race with itself. The thumbnail path uses
+# PyMuPDF instead and is independent.
+_pdf_lock = threading.Lock()
+
 
 def _is_korean(s: str) -> bool:
     return any("가" <= ch <= "힣" for ch in s)
@@ -272,7 +278,10 @@ def convert_pdf_to_pptx(
     prs.slide_height = SLIDE_H_EMU
     blank_layout = prs.slide_layouts[6]
 
-    with pdfplumber.open(str(pdf_path)) as pdf_file:
+    # pypdfium2 (pdfplumber's backend) is not thread-safe. Hold the lock
+    # for the whole conversion so any concurrent thumbnail/conversion call
+    # waits its turn instead of crashing in native code.
+    with _pdf_lock, pdfplumber.open(str(pdf_path)) as pdf_file:
         for i, page in enumerate(pdf_file.pages):
             if cancel_flag and cancel_flag():
                 raise RuntimeError("Cancelled by user")

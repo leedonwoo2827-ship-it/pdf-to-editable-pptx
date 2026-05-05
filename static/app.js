@@ -35,6 +35,7 @@ function app() {
             _dragStart: null,
             movingBlock: null,        // 기존 박스 드래그 이동 상태 {idx, startX, startY, origX_pt, origY_pt, moved}
             pendingDrag: null,        // pending 박스 이동/리사이즈 {handle, startX, startY, origX, origY, origW, origH}
+            resizingBlock: null,      // 기존 박스 코너 리사이즈 {idx, handle, startX, startY, origX_pt, origY_pt, origW_pt, origH_pt}
         },
 
         async init() {
@@ -359,6 +360,36 @@ function app() {
             };
         },
 
+        // ----- 기존 박스 코너 리사이즈 핸들 -----
+        blockHandlePositions(idx) {
+            const b = this.review.blocks[idx];
+            if (!b || !b._px) return [];
+            const size = Math.max(14, Math.round((this.review.bgWidth || 1000) * 0.014));
+            return [
+                {name: 'nw', x: b._px.x,            y: b._px.y,            size, cursor: 'nwse-resize'},
+                {name: 'ne', x: b._px.x + b._px.w,  y: b._px.y,            size, cursor: 'nesw-resize'},
+                {name: 'sw', x: b._px.x,            y: b._px.y + b._px.h,  size, cursor: 'nesw-resize'},
+                {name: 'se', x: b._px.x + b._px.w,  y: b._px.y + b._px.h,  size, cursor: 'nwse-resize'},
+            ];
+        },
+
+        blockHandleDown(idx, handle, event) {
+            event.stopPropagation();
+            const p = this._svgPoint(event);
+            const b = this.review.blocks[idx];
+            this.review.resizingBlock = {
+                idx,
+                handle,
+                startX: p.x,
+                startY: p.y,
+                origX_pt: b.x_pt,
+                origY_pt: b.y_pt,
+                origW_pt: b.w_pt,
+                origH_pt: b.h_pt,
+            };
+            this.review.selectedIdx = idx;
+        },
+
         // ----- 기존 박스 드래그 이동 시작 -----
         blockMouseDown(idx, event) {
             event.stopPropagation();
@@ -393,6 +424,53 @@ function app() {
         },
 
         reviewMouseMove(event) {
+            // -1) 기존 박스 코너 리사이즈 중
+            const rb = this.review.resizingBlock;
+            if (rb) {
+                const p = this._svgPoint(event);
+                const dx_px = p.x - rb.startX;
+                const dy_px = p.y - rb.startY;
+                const sx_pt_per_px = this.review.pageWPt / (this.review.bgWidth || 1);
+                const sy_pt_per_px = this.review.pageHPt / (this.review.bgHeight || 1);
+                const dx_pt = dx_px * sx_pt_per_px;
+                const dy_pt = dy_px * sy_pt_per_px;
+                const minPt = 4;
+                const block = this.review.blocks[rb.idx];
+                if (rb.handle === 'nw') {
+                    const nx = rb.origX_pt + dx_pt;
+                    const ny = rb.origY_pt + dy_pt;
+                    const nw = rb.origW_pt - dx_pt;
+                    const nh = rb.origH_pt - dy_pt;
+                    if (nw >= minPt) { block.x_pt = nx; block.w_pt = nw; }
+                    if (nh >= minPt) { block.y_pt = ny; block.h_pt = nh; }
+                } else if (rb.handle === 'ne') {
+                    const ny = rb.origY_pt + dy_pt;
+                    const nw = rb.origW_pt + dx_pt;
+                    const nh = rb.origH_pt - dy_pt;
+                    if (nw >= minPt) { block.w_pt = nw; }
+                    if (nh >= minPt) { block.y_pt = ny; block.h_pt = nh; }
+                } else if (rb.handle === 'sw') {
+                    const nx = rb.origX_pt + dx_pt;
+                    const nw = rb.origW_pt - dx_pt;
+                    const nh = rb.origH_pt + dy_pt;
+                    if (nw >= minPt) { block.x_pt = nx; block.w_pt = nw; }
+                    if (nh >= minPt) { block.h_pt = nh; }
+                } else if (rb.handle === 'se') {
+                    const nw = rb.origW_pt + dx_pt;
+                    const nh = rb.origH_pt + dy_pt;
+                    if (nw >= minPt) { block.w_pt = nw; }
+                    if (nh >= minPt) { block.h_pt = nh; }
+                }
+                const sx_px_per_pt = (this.review.bgWidth || 1) / this.review.pageWPt;
+                const sy_px_per_pt = (this.review.bgHeight || 1) / this.review.pageHPt;
+                block._px = {
+                    x: block.x_pt * sx_px_per_pt,
+                    y: block.y_pt * sy_px_per_pt,
+                    w: block.w_pt * sx_px_per_pt,
+                    h: block.h_pt * sy_px_per_pt,
+                };
+                return;
+            }
             // 0) Pending 박스 이동/리사이즈 중
             const pd = this.review.pendingDrag;
             if (pd && this.review.pending) {
@@ -470,6 +548,12 @@ function app() {
         },
 
         reviewMouseUp() {
+            // -1) 기존 박스 리사이즈 종료
+            if (this.review.resizingBlock) {
+                this.review.dirty = true;
+                this.review.resizingBlock = null;
+                return;
+            }
             // 0) Pending 박스 이동/리사이즈 종료
             if (this.review.pendingDrag) {
                 this.review.pendingDrag = null;

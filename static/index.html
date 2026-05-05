@@ -131,19 +131,33 @@
                          @mousemove="reviewMouseMove($event)"
                          @mouseup="reviewMouseUp($event)"
                          @mouseleave="reviewMouseUp($event)">
-                        <!-- 기존 검출된 블록 -->
+                        <!-- 기존 검출된 블록 (이동 가능, 선택 시 코너 핸들로 리사이즈) -->
                         <template x-for="(b, idx) in review.blocks" :key="idx">
-                            <g @mousedown.stop="blockMouseDown(idx, $event)"
-                               :class="review.movingBlock?.idx === idx ? 'cursor-grabbing' : 'cursor-grab'">
-                                <rect
-                                    :x="b._px.x" :y="b._px.y"
-                                    :width="b._px.w" :height="b._px.h"
-                                    :fill="review.selectedIdx === idx ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.10)'"
-                                    :stroke="review.selectedIdx === idx ? '#2563eb' : '#10b981'"
-                                    :stroke-width="review.selectedIdx === idx ? 4 : 2" />
-                                <text :x="b._px.x + 6" :y="b._px.y + 18"
-                                      font-size="14" font-family="sans-serif" fill="#065f46"
-                                      x-text="(idx+1) + '. ' + (b.text || '').slice(0, 28)"></text>
+                            <g>
+                                <g @mousedown.stop="blockMouseDown(idx, $event)"
+                                   :class="review.movingBlock?.idx === idx ? 'cursor-grabbing' : 'cursor-grab'">
+                                    <rect
+                                        :x="b._px.x" :y="b._px.y"
+                                        :width="b._px.w" :height="b._px.h"
+                                        :fill="review.selectedIdx === idx ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.10)'"
+                                        :stroke="review.selectedIdx === idx ? '#2563eb' : '#10b981'"
+                                        :stroke-width="review.selectedIdx === idx ? 4 : 2" />
+                                    <text :x="b._px.x + 6" :y="b._px.y + 18"
+                                          font-size="14" font-family="sans-serif" fill="#065f46"
+                                          x-text="(idx+1) + '. ' + (b.text || '').slice(0, 28)"></text>
+                                </g>
+                                <!-- 선택된 박스에만 4개 코너 핸들 -->
+                                <template x-if="review.selectedIdx === idx">
+                                    <g>
+                                        <template x-for="h in blockHandlePositions(idx)" :key="h.name">
+                                            <rect :x="h.x - h.size/2" :y="h.y - h.size/2"
+                                                  :width="h.size" :height="h.size"
+                                                  fill="#2563eb" stroke="white" stroke-width="2"
+                                                  :class="`cursor-${h.cursor}`"
+                                                  @mousedown.stop="blockHandleDown(idx, h.name, $event)" />
+                                        </template>
+                                    </g>
+                                </template>
                             </g>
                         </template>
                         <!-- 새로 그린 영역 (OCR 대기) - 이동/리사이즈 가능 -->

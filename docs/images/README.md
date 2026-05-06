@@ -14,6 +14,8 @@
 | `install-04-venv-activated.png` | 가상환경 활성화 후 프롬프트 앞에 `(.venv)` 표시 |
 | `install-05-pip-install.png` | `pip install -r requirements.txt` 진행 중 또는 `Successfully installed` 마지막 줄 |
 | `install-06-app-running.png` | `python app.py` 실행 후 브라우저에 뜬 첫 화면 |
+| `install-07-nvidia-smi.png` | cmd에서 `nvidia-smi` 출력 — GPU 이름·드라이버·CUDA 버전이 표로 보임 (예: RTX 4070 Laptop, CUDA 12.4) |
+| `install-08-cuda-verify.png` | `python -c "import torch; print(torch.cuda.is_available()); ..."` 결과로 `cuda: True` + GPU 이름 표시 |
 | `usage-01-home.png` | 앱 실행 직후 브라우저 첫 화면 (PDF 업로드 영역 보임) |
 | `usage-02-upload.png` | PDF 드래그&드롭 영역 또는 업로드 직후 페이지 썸네일 |
 | `usage-03-dpi.png` | DPI 선택 슬라이더/입력창 |

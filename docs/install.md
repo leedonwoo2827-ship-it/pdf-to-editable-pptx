@@ -197,16 +197,102 @@ UI가 보이면 설치 완료. cmd 창은 그대로 두세요(끄면 서버도 �
 
 ## GPU 가속 (선택)
 
-NVIDIA GPU + CUDA가 있으면 변환 속도가 약 10배 빨라집니다 (페이지당 30–60초 → 2–5초).
+> 📌 **`setup.bat`은 GPU 유무와 상관없이 똑같이 사용합니다.** setup.bat이 깔아주는 건 항상 **CPU용 PyTorch** 입니다. GPU가 있다면 setup.bat 이후 **추가로 한 줄** 실행해서 GPU torch로 덮어씌우면 끝. GPU가 없으면 이 섹션 통째로 건너뛰세요 (CPU 모드로도 동작합니다).
 
-가상환경 활성화 상태에서:
+NVIDIA GPU + CUDA가 있으면 변환 속도가 **약 10배 빨라집니다**
+(페이지당 30–60초 → 2–5초). 노트북 GPU도 충분합니다.
+
+### 1단계: NVIDIA GPU가 있는지 확인
+
+cmd에서:
 
 ```cmd
+nvidia-smi
+```
+
+> ![nvidia-smi 정상 출력 예시 — RTX 4070 Laptop, CUDA 12.4 드라이버](images/install-07-nvidia-smi.png)
+
+**결과 해석**:
+
+| 출력 | 의미 | 다음 단계 |
+|---|---|---|
+| 표 형태로 GPU 이름·드라이버·CUDA 버전 출력 | ✅ NVIDIA GPU + 드라이버 OK | 2단계로 진행 |
+| `'nvidia-smi'은(는) 내부 또는 외부 명령... 이 아닙니다` | NVIDIA GPU 없음 또는 드라이버 미설치 | CPU torch 그대로 사용 (이번 섹션 건너뜀). 정말 GPU가 있는데 명령이 안 잡히면 https://www.nvidia.com/Download/index.aspx 에서 드라이버 설치 후 재시도 |
+
+표 윗줄의 `CUDA Version: 12.x` 가 **12.0 이상**이면 본 가이드의 `cu121`
+휠과 호환됩니다 (드라이버 CUDA 버전 ≥ wheel CUDA 버전이면 OK).
+
+### 2단계: CUDA용 PyTorch 설치
+
+가상환경 활성화한 상태에서:
+
+```cmd
+.venv\Scripts\activate
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
 
-이미 CPU용 torch가 깔려 있어도 GPU용으로 덮어씁니다. 본 프로젝트는 GPU가
-있으면 자동으로 GPU를 쓰고, 없으면 CPU를 씁니다 (코드 수정 불필요).
+> 💾 **약 2 GB 다운로드, 인터넷 속도에 따라 10–30분.**
+> CPU용 torch가 이미 깔려 있어도 GPU용으로 덮어씁니다.
+> 디스크 공간 ~3 GB 추가 필요.
+
+대안: GPU 드라이버가 CUDA 12.4 이상이면 더 정확히 매칭되는 cu124 휠도 가능:
+
+```cmd
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+(둘 다 동작 — `cu121`이 호환성 폭이 더 넓어서 가이드 기본값.)
+
+### 3단계: PyTorch가 GPU를 인식하는지 검증
+
+```cmd
+python -c "import torch; print('cuda:', torch.cuda.is_available()); print('device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
+```
+
+> ![torch.cuda.is_available() True 출력 예시](images/install-08-cuda-verify.png)
+
+**기대 출력**:
+```
+cuda: True
+device: NVIDIA GeForce RTX 4070 Laptop GPU
+```
+
+`cuda: True` 가 나오면 GPU 모드 준비 완료. 본 프로젝트가 다음 실행부터
+**자동으로 GPU를 사용**합니다 ([src/core/inpaint.py](../src/core/inpaint.py)의
+`InpaintEngine`이 `torch.cuda.is_available()`로 자동 분기 — 사용자가 코드
+수정할 일 없음).
+
+만약 `cuda: False` 가 나오면:
+- `pip list | findstr torch` 로 깔린 torch 버전 확인. 끝에 `+cu121` 같은 태그가 붙어 있어야 GPU 빌드.
+- CPU 빌드(`+cpu` 태그)면 `pip uninstall torch torchvision` 후 2단계 재실행.
+
+### 4단계: 본 앱 재실행
+
+이미 앱이 떠 있으면 한 번 끄고(`Ctrl+C`) 다시 띄워야 새 torch가 로드됩니다:
+
+```cmd
+start.bat
+```
+
+또는:
+```cmd
+.venv\Scripts\activate
+python app.py
+```
+
+이제 변환 시 페이지당 2–5초로 처리됩니다. 변환 진행 화면 좌측 패널의
+"평균/슬라이드" 값이 GPU 모드인지 한눈에 보여줍니다 (CPU 30s+ vs GPU 5s 미만).
+
+### CPU vs GPU 성능 (참고)
+
+| 환경 | 페이지당 시간 (200 DPI) | 10페이지 PDF 예상 |
+|---|---|---|
+| CPU only | 30–60초 | 5–10분 |
+| **GPU (RTX 30/40 시리즈, 8GB+ VRAM)** | **2–5초** | **30초–1분** |
+| GPU (구형 GTX 1060/1070, 6GB) | 5–15초 | 1–3분 |
+
+VRAM이 부족하면(2–4GB) LaMa가 OOM(out of memory)으로 떨어질 수 있습니다.
+이 경우 변환 DPI를 낮추거나(200→150) CPU로 회귀.
 
 ---
 

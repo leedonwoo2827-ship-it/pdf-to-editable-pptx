@@ -622,9 +622,28 @@ function app() {
             // 3) 사각형 종료
             if (this.review._dragStart) {
                 const d = this.review.drawing;
+                const start = this.review._dragStart;
                 this.review._dragStart = null;
                 this.review.drawing = null;
-                if (!d || d.w < 8 || d.h < 8) return;
+
+                // 정확한 드래그가 어려운 사용자를 위해, 사실상 클릭만 한 경우에도
+                // 기본 크기 박스를 클릭 위치에 띄워준다 — 이후 코너 핸들로 조정.
+                // 드래그 거리가 8px 미만 = "클릭" 으로 간주.
+                if (!d || d.w < 8 || d.h < 8) {
+                    const W = this.review.bgWidth || 1000;
+                    const H = this.review.bgHeight || 1000;
+                    // 텍스트 한 줄 모양에 가까운 가로로 길쭉한 기본 크기.
+                    const defaultW = Math.max(220, W * 0.15);
+                    const defaultH = Math.max(56, H * 0.05);
+                    let x = start.x - defaultW / 2;
+                    let y = start.y - defaultH / 2;
+                    // 캔버스 밖으로 새지 않도록 클램프.
+                    x = Math.max(0, Math.min(x, W - defaultW));
+                    y = Math.max(0, Math.min(y, H - defaultH));
+                    this.review.pending = {x, y, w: defaultW, h: defaultH};
+                    this.review.pendingText = '';
+                    return;
+                }
                 this.review.pending = d;
                 this.review.pendingText = '';
             }

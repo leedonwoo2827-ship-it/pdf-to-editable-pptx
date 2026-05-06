@@ -128,6 +128,10 @@
                 <span x-text="review.panelCollapsed ? '◀ 패널 열기' : '패널 접기 ▶'"></span>
             </button>
 
+            <!-- 캔버스 호버 시 커서의 페이지 이미지 좌표 (X/Y/W/H 인풋과 동일 단위, (0,0)=좌상단). -->
+            <span class="text-xs text-slate-500 font-mono ml-2 min-w-[7rem]"
+                  x-text="review.cursorX !== null ? `커서: X ${review.cursorX}, Y ${review.cursorY}` : '커서: —'"></span>
+
             <span class="grow"></span>
             <span class="text-xs text-slate-500" x-text="review.dirty ? '저장되지 않은 변경 있음' : '변경 사항 없음'"></span>
             <button @click="saveCurrentPage()" :disabled="!review.dirty || review.saving"
@@ -155,7 +159,7 @@
                          @mousedown="reviewMouseDown($event)"
                          @mousemove="reviewMouseMove($event)"
                          @mouseup="reviewMouseUp($event)"
-                         @mouseleave="reviewMouseUp($event)">
+                         @mouseleave="reviewMouseUp($event); review.cursorX = null; review.cursorY = null">
                         <!-- 투명 배경 rect — SVG의 빈 영역에서도 mousedown 이벤트가 발화되도록.
                              자동 검출된 블록이 0개인 페이지에서 사각형/색칠 도구가 안 되던 문제 해결. -->
                         <rect x="0" y="0" :width="review.bgWidth" :height="review.bgHeight" fill="white" fill-opacity="0" />

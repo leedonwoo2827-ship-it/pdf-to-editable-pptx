@@ -21,6 +21,8 @@ function app() {
             displayH: 0,              // 에디터 캔버스 기본 CSS 픽셀 높이 (이미지 로드 시 계산)
             zoom: 1.0,                // 사용자 줌 배율 (0.5 ~ 3.0). 캔버스 표시 크기에만 영향, viewBox는 그대로
             panelCollapsed: false,    // 우측 사이드 패널 접힘 여부 (캔버스 가로 공간 확보용)
+            cursorX: null,            // 캔버스 호버 시 커서 좌표 (페이지 이미지 픽셀, viewBox 단위)
+            cursorY: null,
             blocks: [],               // [{text, x_pt, y_pt, w_pt, h_pt, score, _px:{x,y,w,h}}]
             pageWPt: 1,
             pageHPt: 1,
@@ -613,6 +615,11 @@ function app() {
         },
 
         reviewMouseMove(event) {
+            // 커서 좌표 표시용 — 모든 분기보다 먼저 업데이트 (호버만 해도 보이게).
+            const cursor = this._svgPoint(event);
+            this.review.cursorX = Math.round(cursor.x);
+            this.review.cursorY = Math.round(cursor.y);
+
             // -1) 기존 박스 코너 리사이즈 중
             const rb = this.review.resizingBlock;
             if (rb) {

@@ -64,6 +64,28 @@ function app() {
             }
             return 'Working…';
         },
+        // Average seconds per finished page. 0 until at least one page completes.
+        get avgPageSeconds() {
+            const done = this.pages.filter(p => p.state === 'done' && p.elapsed_s > 0);
+            if (done.length === 0) return 0;
+            const total = done.reduce((acc, p) => acc + (p.elapsed_s || 0), 0);
+            return total / done.length;
+        },
+        // Sum of elapsed_s across finished pages. Approximates "total
+        // conversion time" when pages run sequentially (which they do
+        // in the current pipeline).
+        get totalElapsedSeconds() {
+            return this.pages.reduce((acc, p) => acc + (p.elapsed_s || 0), 0);
+        },
+        // Estimated seconds remaining = average * (queued + in-flight).
+        get etaSeconds() {
+            if (!this.job) return 0;
+            if (this.avgPageSeconds === 0) return 0;
+            const remaining = this.pages.filter(
+                p => p.state !== 'done' && p.state !== 'error'
+            ).length;
+            return Math.round(this.avgPageSeconds * remaining);
+        },
 
         // ----- Helpers -----
         thumbUrl(idx) {
@@ -104,6 +126,20 @@ function app() {
         showToast(msg, ms = 3000) {
             this.toast = msg;
             setTimeout(() => { if (this.toast === msg) this.toast = ''; }, ms);
+        },
+        // Format seconds as "Xs" (<60), "Xm Ys" (<3600), or "Xh Ym".
+        // Returns "—" for 0/missing values so the summary doesn't show
+        // a misleading "0s" before the first page completes.
+        formatSeconds(s) {
+            if (!s || s <= 0) return '—';
+            const total = Math.round(s);
+            if (total < 60) return `${total}s`;
+            const m = Math.floor(total / 60);
+            const sec = total % 60;
+            if (m < 60) return sec === 0 ? `${m}m` : `${m}m ${sec}s`;
+            const h = Math.floor(m / 60);
+            const mm = m % 60;
+            return mm === 0 ? `${h}h` : `${h}h ${mm}m`;
         },
 
         // ----- Upload -----

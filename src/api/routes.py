@@ -20,7 +20,7 @@ from src.api.schemas import (
     SaveBlocksRequest,
     UploadResponse,
 )
-from src.core import jobs, local_export, page_render
+from src.core import jobs, page_render, pipeline, review, workspace
 from src.settings import settings
 
 
@@ -77,8 +77,8 @@ def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
         return
 
     try:
-        converter = local_export.get_shared_converter()
-        converter.initialize_models()
+        engines = pipeline.get_engines()
+        engines.ensure_loaded()
     except Exception as exc:
         job.overall_state = "failed"
         job.error = f"Model initialization failed: {exc}"
@@ -107,12 +107,12 @@ def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
 
     try:
         job.overall_state = "running"
-        local_export.convert_pdf_to_pptx(
+        pipeline.convert_pdf_to_pptx(
             pdf_path=job.pdf_path,
             output_path=output_path,
             dpi=dpi,
             dilation=dilation,
-            converter=converter,
+            engines=engines,
             on_page_progress=on_page_progress,
             cancel_flag=cancel_flag,
             workspace_dir=job.workspace_dir,
@@ -208,7 +208,7 @@ def review_bg(job_id: str, page_idx: int):
 @router.get("/review/{job_id}/{page_idx}/state", response_model=ReviewPageState)
 def review_state(job_id: str, page_idx: int) -> ReviewPageState:
     job = _require_workspace(job_id)
-    data = local_export.load_page_state(job.workspace_dir, page_idx)
+    data = workspace.load_page_state(job.workspace_dir, page_idx)
     if data is None:
         raise HTTPException(404, "Page not converted yet")
     return ReviewPageState.model_validate(data)
@@ -218,7 +218,7 @@ def review_state(job_id: str, page_idx: int) -> ReviewPageState:
 def review_save_blocks(job_id: str, page_idx: int, req: SaveBlocksRequest):
     job = _require_workspace(job_id)
     blocks = [b.model_dump() for b in req.blocks]
-    if not local_export.update_page_blocks(job.workspace_dir, page_idx, blocks):
+    if not workspace.update_page_blocks(job.workspace_dir, page_idx, blocks):
         raise HTTPException(500, "Failed to save blocks")
     return {"ok": True, "count": len(blocks)}
 
@@ -228,12 +228,10 @@ def review_ocr_region(
     job_id: str, page_idx: int, req: OcrRegionRequest
 ) -> OcrRegionResponse:
     job = _require_workspace(job_id)
-    converter = local_export.get_shared_converter()
-    converter.initialize_models()
-    if converter.ocr_engine is None:
-        raise HTTPException(500, "OCR engine not initialized")
-    block = local_export.ocr_region_from_bg(
-        job.workspace_dir, page_idx, list(req.bbox_norm), converter.ocr_engine
+    engines = pipeline.get_engines()
+    engines.ensure_loaded()
+    block = review.ocr_region_from_bg(
+        job.workspace_dir, page_idx, list(req.bbox_norm), engines.ocr
     )
     if block is None:
         return OcrRegionResponse(ok=False, message="No text detected in that region.")
@@ -252,16 +250,14 @@ def review_commit_region(
     text = (req.text or "").strip()
     if not text:
         return CommitRegionResponse(ok=False, message="Text is empty")
-    converter = local_export.get_shared_converter()
-    converter.initialize_models()
-    if converter.lama is None:
-        raise HTTPException(500, "Inpainting model not initialized")
-    block = local_export.commit_new_region(
+    engines = pipeline.get_engines()
+    engines.ensure_loaded()
+    block = review.commit_new_region(
         job.workspace_dir,
         page_idx,
         list(req.bbox_norm),
         text,
-        converter.lama,
+        engines.inpaint,
     )
     if block is None:
         return CommitRegionResponse(ok=False, message="Could not commit region")
@@ -276,7 +272,7 @@ def review_regenerate(job_id: str):
         / f"{job.id}_{Path(job.filename).stem}_Editable_v2.pptx"
     )
     try:
-        local_export.assemble_pptx_from_workspace(job.workspace_dir, new_output)
+        pipeline.assemble_pptx_from_workspace(job.workspace_dir, new_output)
     except Exception as exc:
         raise HTTPException(500, f"Regenerate failed: {exc}") from exc
     job.output_path = new_output

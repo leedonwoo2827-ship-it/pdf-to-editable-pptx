@@ -121,6 +121,13 @@
             <button @click="reviewZoomReset()"
                     class="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600" title="100%로 초기화">초기화</button>
 
+            <span class="text-slate-300 mx-1">|</span>
+            <button @click="review.panelCollapsed = !review.panelCollapsed"
+                    class="text-sm px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    :title="review.panelCollapsed ? '우측 패널 펼치기' : '우측 패널 접기'">
+                <span x-text="review.panelCollapsed ? '◀ 패널 열기' : '패널 접기 ▶'"></span>
+            </button>
+
             <span class="grow"></span>
             <span class="text-xs text-slate-500" x-text="review.dirty ? '저장되지 않은 변경 있음' : '변경 사항 없음'"></span>
             <button @click="saveCurrentPage()" :disabled="!review.dirty || review.saving"
@@ -135,7 +142,8 @@
             </button>
         </div>
 
-        <div class="grid grid-cols-[1fr_320px] overflow-hidden">
+        <div class="grid overflow-hidden"
+             :class="review.panelCollapsed ? 'grid-cols-[1fr_0px]' : 'grid-cols-[1fr_260px]'">
             <!-- Center: SVG editor on top of the inpainted bg -->
             <section class="overflow-auto bg-slate-200 p-4 flex items-start justify-center">
                 <div class="relative bg-white shadow-lg"
@@ -198,7 +206,8 @@
             </section>
 
             <!-- 우측: 선택된 블록 편집 / 새 영역 OCR 패널 -->
-            <aside class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
+            <aside x-show="!review.panelCollapsed"
+                   class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
                 <div class="text-xs uppercase tracking-wide text-slate-400">
                     <b>⬛ 박스 추가</b> 버튼: 캔버스 정중앙에 기본 크기 박스를 즉시 생성. 그 박스를 끌어서 원하는 위치로 이동, 코너 핸들로 크기 조정. <b>여러 번 누르면 여러 개</b> 추가됨.<br>
                     <b>🖌 색칠 모드</b>: 토글. 켠 뒤 캔버스를 자유롭게 칠하면 칠한 영역의 외곽이 박스가 됨.<br>

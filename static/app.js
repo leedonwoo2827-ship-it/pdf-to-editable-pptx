@@ -20,6 +20,7 @@ function app() {
             displayW: 1100,           // 에디터 캔버스 기본 CSS 픽셀 너비
             displayH: 0,              // 에디터 캔버스 기본 CSS 픽셀 높이 (이미지 로드 시 계산)
             zoom: 1.0,                // 사용자 줌 배율 (0.5 ~ 3.0). 캔버스 표시 크기에만 영향, viewBox는 그대로
+            panelCollapsed: false,    // 우측 사이드 패널 접힘 여부 (캔버스 가로 공간 확보용)
             blocks: [],               // [{text, x_pt, y_pt, w_pt, h_pt, score, _px:{x,y,w,h}}]
             pageWPt: 1,
             pageHPt: 1,

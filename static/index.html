@@ -168,28 +168,29 @@
                                 </template>
                             </g>
                         </template>
-                        <!-- 새로 그린 영역들 (여러 개 동시 가능). nested template를 피하기 위해
-                             body+label 따로, handles는 아래 별도 top-level template로 분리. -->
-                        <template x-for="p in review.pendings" :key="p.id">
+                        <!-- 새로 그린 영역들 — 위 blocks와 동일한 (item, idx) 패턴 + :key="idx"로
+                             통일. Alpine 3.14의 SVG x-for에서 :key="p.id" 같은 객체 속성 키가
+                             가끔 재렌더를 누락하는 케이스가 있어 idx 기반 키로 안전하게. -->
+                        <template x-for="(p, idx) in review.pendings" :key="idx">
                             <g>
                                 <rect
                                       :x="p.x" :y="p.y"
                                       :width="p.w" :height="p.h"
-                                      :fill="review.activePendingId === p.id ? 'rgba(245,158,11,0.30)' : 'rgba(245,158,11,0.15)'"
-                                      :stroke="review.activePendingId === p.id ? '#d97706' : '#f59e0b'"
-                                      :stroke-width="review.activePendingId === p.id ? 4 : 3"
+                                      :fill="review.activePendingId === p.id ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.18)'"
+                                      :stroke="review.activePendingId === p.id ? '#b45309' : '#d97706'"
+                                      :stroke-width="review.activePendingId === p.id ? 5 : 4"
                                       class="cursor-move"
                                       @mousedown.stop="pendingHandleDown(p.id, 'move', $event)" />
-                                <text :x="p.x + 6" :y="p.y + 18"
-                                      font-size="14" font-family="sans-serif" fill="#92400e"
-                                      x-text="(review.pendings.indexOf(p) + 1) + '. ' + ((p.text || '').slice(0, 28) || '(빈 박스)')"></text>
+                                <text :x="p.x + 8" :y="p.y + 22"
+                                      font-size="16" font-weight="bold" font-family="sans-serif" fill="#7c2d12"
+                                      x-text="(idx + 1) + '. ' + ((p.text || '').slice(0, 28) || '(빈 박스)')"></text>
                             </g>
                         </template>
-                        <!-- active pending의 4개 코너 핸들 — nested 회피 위해 top-level x-for로 분리. -->
+                        <!-- active pending의 4개 코너 핸들. -->
                         <template x-for="h in (review.activePendingId !== null ? pendingHandlePositions(review.activePendingId) : [])" :key="h.name">
                             <rect :x="h.x - h.size/2" :y="h.y - h.size/2"
                                   :width="h.size" :height="h.size"
-                                  fill="#d97706" stroke="white" stroke-width="2"
+                                  fill="#b45309" stroke="white" stroke-width="2"
                                   :class="`cursor-${h.cursor}`"
                                   @mousedown.stop="pendingHandleDown(review.activePendingId, h.name, $event)" />
                         </template>

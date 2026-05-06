@@ -11,7 +11,7 @@
 ### LaMa (Resolution-robust Large Mask Inpainting)
 
 - **Paper**: Suvorov et al., *Resolution-robust Large Mask Inpainting with Fourier Convolutions*, WACV 2022 — https://arxiv.org/abs/2109.07161
-- **Original repository**: https://github.com/saic-mdal/lama
+- **Original repository**: https://github.com/advimman/lama
 - **Code license**: Apache License 2.0
 - **Role**: 페이지 이미지에서 OCR이 검출한 텍스트 영역만 깨끗이 제거 (배경·로고·차트 픽셀은 보존)
 
@@ -54,23 +54,17 @@
 
 - **Repository**: https://github.com/jsvine/pdfplumber
 - **License**: MIT
-- **Role**: PDF 페이지 → PIL.Image (변환 파이프라인 본 작업). 내부적으로 pypdfium2 사용.
+- **Role**: PDF 페이지 → PIL.Image (변환 파이프라인). 내부적으로 pypdfium2 사용.
 
-### pypdfium2 (pdfplumber 의존)
+### pypdfium2
 
 - **Repository**: https://github.com/pypdfium2-team/pypdfium2
-- **License**: Apache 2.0 / BSD-3 (PDFium은 BSD-3, 본 바인딩은 Apache 2.0)
+- **License**: Apache 2.0 (Python 바인딩) / BSD-3 (PDFium 코어, Chromium project)
+- **Role**: 두 경로에서 사용:
+  - 변환 파이프라인 — pdfplumber를 통해 간접 사용
+  - 브라우저 썸네일 — `src/core/page_render.py`에서 직접 사용 (모듈 레벨 lock으로 PDFium의 thread-safety 한계 보완)
 
-### PyMuPDF (fitz)
-
-- **Repository**: https://github.com/pymupdf/PyMuPDF
-- **License**: **GNU Affero General Public License v3.0 (AGPL-3.0)** 또는 Artifex 상용 라이선스
-- **License URL**: https://github.com/pymupdf/PyMuPDF/blob/main/COPYING
-- **Role**: 브라우저 썸네일 경로에서만 사용 (스레드 안전이 필요한 경로). 변환 파이프라인은 pdfplumber 사용.
-
-> **⚠️ AGPL 영향:** PyMuPDF는 본 프로젝트 의존성 중 가장 엄격한 라이선스를 가집니다. 데스크톱·로컬 사용에서는 AGPL의 추가 의무가 발동하지 않지만, 본 앱을 외부 SaaS로 호스팅할 경우 네트워크 사용자에게도 소스 공개 의무가 발생합니다. 폐쇄소스 상용 배포 시 Artifex 상용 라이선스를 별도 구매하거나, PyMuPDF를 pypdfium2 등으로 교체해야 합니다 (썸네일 경로만 사용하므로 교체 비용 낮음 — [docs/research/04-license-strategy.md](docs/research/04-license-strategy.md) 참고).
->
-> 본 프로젝트의 메인 라이선스는 MIT이지만, 사용자가 PyMuPDF가 포함된 배포본을 받을 때는 AGPL 의무가 함께 적용됩니다.
+> 이전 버전에서는 썸네일 경로에 PyMuPDF(AGPL-3.0)를 사용했지만, 본 앱을 LAN 서버로 띄워 동료들과 공유할 가능성을 고려해 **AGPL을 의존성에서 완전히 제거**했습니다 (자세한 결정 배경: [docs/research/04-license-strategy.md](docs/research/04-license-strategy.md)). 현재 본 프로젝트의 모든 의존성은 MIT / Apache 2.0 / BSD / HPND 등 copyleft가 아닌 라이선스만 사용합니다.
 
 ---
 
@@ -157,13 +151,11 @@
 | BSD-style | python-bidi, Shapely | 라이선스 고지 |
 | BSD 3-Clause | Uvicorn, NumPy, PyTorch, pypdfium2 (PDFium 코어) | 라이선스 고지 |
 | HPND | Pillow | 라이선스 고지 |
-| **AGPL-3.0** | **PyMuPDF** | ⚠️ 데스크톱 사용은 무관, 네트워크 배포 시 소스 공개 의무 |
 | ⚠️ 별도 확인 | LaMa 모델 가중치 | 사용 전 가중치 배포본의 LICENSE 확인 (특히 상업 사용 시) |
 
 **본 프로젝트의 라이선스**: MIT.
-**배포본에 적용되는 추가 의무**: PyMuPDF의 AGPL 조항 (네트워크 서비스화
-시 소스 공개), LaMa 가중치의 별도 라이선스 (상업 사용 시 사용자 확인
-필요).
+**Copyleft (GPL/AGPL) 의존성**: 없음. 모든 코드 의존성이 MIT / Apache 2.0 / BSD / HPND 계열 — 네트워크 배포·사내 LAN 공유·외부 SaaS 어떤 형태로 운영해도 라이선스 측면 추가 의무 없음.
+**한 가지 잔존 회색 지대**: LaMa 모델 가중치의 학습 데이터(Places2) 라이선스. 본 저장소는 가중치를 재배포하지 않고 사용자 PC에서 첫 실행 시 원 저장소에서 다운로드하므로, 가중치 라이선스의 책임은 최종 사용자 환경에 분배됩니다 ([docs/research/04-license-strategy.md "Model weights"](docs/research/04-license-strategy.md) 참고).
 
 ## Acknowledgments
 

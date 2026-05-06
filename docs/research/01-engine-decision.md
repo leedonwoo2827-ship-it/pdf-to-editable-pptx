@@ -17,7 +17,7 @@
 
 ## Decision
 
-**핵심 인페인팅 엔진으로 [LaMa](https://github.com/saic-mdal/lama)
+**핵심 인페인팅 엔진으로 [LaMa](https://github.com/advimman/lama)
 (Resolution-robust Large Mask Inpainting, Suvorov et al., WACV 2022)를 채택**,
 이를 [`simple_lama_inpainting`](https://github.com/enesmsahin/simple-lama-inpainting)
 래퍼를 통해 PyTorch에서 호출합니다.
@@ -34,7 +34,7 @@ cleaned = self._lama(pil_image, mask)    # (이미지, 마스크) → 텍스트 
 
 | 단계 | 모듈 / 라이브러리 | 역할 |
 |---|---|---|
-| PDF 렌더 | [pdf_pages.py](../../src/core/pdf_pages.py) (`pdfplumber`) / [page_render.py](../../src/core/page_render.py) (`PyMuPDF`) | 페이지 → PIL.Image (변환 / 썸네일) |
+| PDF 렌더 | [pdf_pages.py](../../src/core/pdf_pages.py) (`pdfplumber`) / [page_render.py](../../src/core/page_render.py) (`pypdfium2`) | 페이지 → PIL.Image (변환 / 썸네일) — 둘 다 PDFium 기반, 각자 lock으로 직렬화 |
 | OCR | [ocr.py](../../src/core/ocr.py) (`easyocr`, `langs=['ko','en']`) | 텍스트 bbox + 내용 (한국어 네이티브) |
 | 마스크 후처리 | [mask.py](../../src/core/mask.py) (`opencv-python`) | `fillPoly` + adaptive `dilate` (텍스트 두께만큼 확장) |
 | **인페인팅** | [**inpaint.py**](../../src/core/inpaint.py) (**`simple_lama_inpainting`**) | **텍스트 영역만 깨끗이 제거** |
@@ -85,7 +85,7 @@ PyTorch와 LaMa 모델 가중치(~700 MB)는 첫 실행 시 자동 다운로드�
 
 ### 검증된 구현 (`simple_lama_inpainting`)
 
-원본 [saic-mdal/lama](https://github.com/saic-mdal/lama)는 학습/추론 양쪽을
+원본 [advimman/lama](https://github.com/advimman/lama)는 학습/추론 양쪽을
 포함한 큰 리포지토리입니다. 본 프로젝트는 추론만 필요하므로 추론 경로만
 래핑한 [`simple_lama_inpainting`](https://github.com/enesmsahin/simple-lama-inpainting)
 패키지를 사용합니다. PyPI 한 줄 설치로 모델 다운로드까지 자동 처리됩니다.
@@ -114,7 +114,7 @@ PaddleOCR · RapidOCR · Tesseract 등을 검토한 끝에
 - ✅ 이미지-only PDF 입력에서도 동작
 - ✅ 1:1 시각 충실도 (배경 픽셀 보존)
 - ✅ 100% 로컬, API 키 없음
-- ✅ MIT/Apache/BSD 호환 라이선스 (PyMuPDF AGPL은 별도 고지)
+- ✅ MIT/Apache/BSD 호환 라이선스만 사용 (copyleft 없음)
 - ⚠️ CPU에서 페이지당 30–60초 (200 DPI). GPU에서는 2–5초
 - ⚠️ 첫 실행 시 ~700 MB 다운로드 (PyTorch + LaMa 가중치)
 
@@ -173,6 +173,6 @@ PaddleOCR · RapidOCR · Tesseract 등을 검토한 끝에
 ## References
 
 - LaMa 논문: Suvorov et al., "Resolution-robust Large Mask Inpainting with Fourier Convolutions" (WACV 2022) — https://arxiv.org/abs/2109.07161
-- LaMa 원 저장소: https://github.com/saic-mdal/lama
+- LaMa 원 저장소: https://github.com/advimman/lama
 - simple_lama_inpainting (사용 패키지): https://github.com/enesmsahin/simple-lama-inpainting
 - EasyOCR: https://github.com/JaidedAI/EasyOCR

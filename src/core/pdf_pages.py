@@ -1,14 +1,20 @@
 """Render PDF pages to PIL images for the conversion pipeline.
 
-Why pdfplumber here and PyMuPDF in page_render.py:
-- pdfplumber sits on top of pypdfium2, which is NOT thread-safe. Multiple
-  pypdfium2 calls in flight at the same process crash inside native code.
-- The conversion pipeline runs page-by-page anyway, so a single global
-  lock around pdfplumber.open is cheap and avoids a class of native
-  crashes if someone later parallelises the loop or starts a second
-  conversion while one is in flight.
-- Browser thumbnails go through PyMuPDF (page_render.py) which IS
-  thread-safe. Don't conflate the two paths.
+Both this module and page_render.py sit on top of pypdfium2 (PDFium),
+which is NOT thread-safe at the C level. Each module owns its own
+threading.Lock so:
+- The conversion pipeline (this file) serialises page rendering during
+  a conversion job. Pages run sequentially anyway.
+- Browser thumbnails (page_render.py) serialise their own concurrent
+  calls behind a separate lock.
+
+The two locks are independent: each path opens its own PdfDocument,
+holds it only inside its own lock, and closes it before the lock
+releases. They never share state.
+
+Earlier versions used PyMuPDF (AGPL-3.0) for the thumbnail path because
+pypdfium2's thread-safety was thinner; we removed PyMuPDF to keep the
+licence matrix copyleft-free for LAN-served use.
 """
 from __future__ import annotations
 

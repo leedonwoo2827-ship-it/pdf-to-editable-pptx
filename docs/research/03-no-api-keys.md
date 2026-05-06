@@ -29,7 +29,7 @@ PC에서 완전히 로컬로 실행**됩니다.
 | `torch` / `torchvision` | Python 패키지 | BSD-style | LaMa 추론 백엔드 |
 | `easyocr` (+ 한·영 모델) | Python 패키지 + 캐시 | Apache 2.0 | OCR (KR/EN, PyTorch 백엔드) |
 | `pdfplumber` (+ pypdfium2) | Python 패키지 | MIT / Apache 2.0·BSD-3 | PDF 페이지 → 이미지 (변환 단계) |
-| `PyMuPDF` (fitz) | Python 패키지 | AGPL-3.0 / 상용 | 브라우저 썸네일 (스레드 안전 필요한 경로) |
+| `pypdfium2` (직접 사용) | Python 패키지 | Apache 2.0 / BSD-3 | 브라우저 썸네일 (`src/core/page_render.py` — pdfplumber 백엔드와 동일 엔진을 별도 lock으로 사용) |
 | `opencv-python` | Python 패키지 | Apache 2.0 (OpenCV BSD) | 마스크 후처리 |
 | `python-pptx` | Python 패키지 | MIT | .pptx 작성 |
 | `Pillow`, `numpy` | Python 패키지 | HPND, BSD | 이미지·배열 |

@@ -18,7 +18,7 @@ PDF ──► (page render) ──► (OCR) ──► (mask + inpaint) ──►
 | # | 라이브러리 | 방식 | 모델 크기 | 결과 품질 | 라이선스 (코드) | 결정 |
 |---|---|---|---|---|---|---|
 | A1 | **[simple_lama_inpainting](https://github.com/enesmsahin/simple-lama-inpainting)** (LaMa wrapper) | FFC 기반 단일 forward, PyTorch | ~200 MB 가중치 | 텍스트 같은 얇고 긴 마스크에 강함 | MIT (래퍼), 원 LaMa 코드는 Apache 2.0 | **✅ 채택** |
-| A2 | [saic-mdal/lama](https://github.com/saic-mdal/lama) (원본) | LaMa 풀 리포 (학습 + 추론) | 동일 | 동일 | Apache 2.0 | 추론만 필요 → 래퍼 사용 |
+| A2 | [advimman/lama](https://github.com/advimman/lama) (원본) | LaMa 풀 리포 (학습 + 추론) | 동일 | 동일 | Apache 2.0 | 추론만 필요 → 래퍼 사용 (자세한 비교는 [05-lama-integration-choice.md](05-lama-integration-choice.md)) |
 | A3 | [IOPaint](https://github.com/Sanster/IOPaint) (구 lama-cleaner) | LaMa·SD·MAT 등 멀티 백엔드 + 자체 웹 UI | 200 MB ~ 수 GB | 매우 좋음 | Apache 2.0 | UI가 별도 앱 → 본 프로젝트와 통합 부적합 |
 | A4 | Stable Diffusion inpainting | Diffusion 기반 재생성 | 4–7 GB | 환각 위험, 텍스트 제거에 과함 | OpenRAIL-M | 텍스트 제거에는 oversized |
 | A5 | `cv2.inpaint` (Telea / Navier-Stokes) | 고전 영상처리 | — (OpenCV 기본 포함) | 작은 흠집은 OK, 텍스트는 번짐 | Apache 2.0 (OpenCV) | 품질 부족 |
@@ -65,22 +65,24 @@ PDF ──► (page render) ──► (OCR) ──► (mask + inpaint) ──►
 
 | # | 라이브러리 | 백엔드 | 스레드 안전 | 라이선스 | 본 프로젝트 사용처 |
 |---|---|---|---|---|---|
-| C1 | **[pdfplumber](https://github.com/jsvine/pdfplumber)** | pypdfium2 | ⚠️ 단일 스레드 | MIT | **변환 파이프라인** (전역 락으로 직렬화) |
-| C2 | **[PyMuPDF (fitz)](https://github.com/pymupdf/PyMuPDF)** | MuPDF | ✅ | AGPL-3.0 / 상용 | **브라우저 썸네일** (요청 동시성 필요) |
-| C3 | [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) | PDFium (Chromium) | ⚠️ 단일 스레드 | Apache 2.0 / BSD-3 | (pdfplumber 내부에서 사용 중) |
-| C4 | [pdf2image](https://github.com/Belval/pdf2image) | Poppler (외부 바이너리) | ✅ | MIT | Poppler PATH 부담 → 미사용 |
+| C1 | **[pdfplumber](https://github.com/jsvine/pdfplumber)** | pypdfium2 | ⚠️ 단일 스레드 | MIT | **변환 파이프라인** (모듈 lock으로 직렬화) |
+| C2 | **[pypdfium2](https://github.com/pypdfium2-team/pypdfium2)** | PDFium (Chromium) | ⚠️ 단일 스레드 | Apache 2.0 / BSD-3 | **브라우저 썸네일** (모듈 lock으로 직렬화) + pdfplumber 내부 백엔드 |
+| C3 | [PyMuPDF (fitz)](https://github.com/pymupdf/PyMuPDF) | MuPDF | ✅ | **AGPL-3.0** / 상용 | ❌ 미사용 — 라이선스 청결성을 위해 제거 (이전 버전에서 썸네일 경로에 사용했음) |
+| C4 | [pdf2image](https://github.com/Belval/pdf2image) | Poppler (외부 바이너리) | ✅ | MIT (래퍼) / GPL (Poppler) | Poppler PATH 부담 + GPL → 미사용 |
 | C5 | pdfminer.six | 자체 | ✅ | MIT | 텍스트 추출용, 이미지 렌더링은 안 함 |
 
-**선택 이유**: 두 라이브러리를 **용도별로 병행**.
+**선택 이유**: **pypdfium2 단일 백엔드** + 두 경로 각자의 모듈 lock.
 
-- `pdfplumber`(C1)는 변환 본 작업에서 사용. 단일 스레드라
-  [src/core/pdf_pages.py](../../src/core/pdf_pages.py)에서
-  전역 `threading.Lock`으로 직렬화.
-- `PyMuPDF`(C2)는 **브라우저 썸네일** 경로에서만 사용. 동시 요청을 받기
-  위해 스레드 안전이 필요하기 때문. AGPL이지만 (a) 본 프로젝트 자체가
-  네트워크 서비스로 배포되지 않고, (b) 데스크톱 로컬 사용에선 추가 의무가
-  발동하지 않으므로 수용. 자세한 라이선스 영향은
-  [04-license-strategy.md](04-license-strategy.md).
+- `pdfplumber`(C1)는 변환 본 작업에서 사용. 내부적으로 pypdfium2.
+  [src/core/pdf_pages.py](../../src/core/pdf_pages.py)의
+  전역 `threading.Lock`으로 직렬화 (PDFium은 thread-safe하지 않음).
+- `pypdfium2`(C2)는 **브라우저 썸네일** 경로에서 직접 사용
+  ([src/core/page_render.py](../../src/core/page_render.py)). 같은 PDFium
+  엔진이지만 별도 lock으로 변환 경로와 독립 동작.
+- **PyMuPDF는 의도적으로 사용하지 않음**. AGPL-3.0은 본 앱을 LAN 서버나
+  외부 SaaS로 배포할 때 소스 공개 의무를 발동시키므로, 사내 LAN 공유를
+  지원하기 위해 같은 PDFium 엔진을 쓰는 pypdfium2 직접 사용으로 통일
+  ([04-license-strategy.md](04-license-strategy.md) 참고).
 
 ---
 

@@ -112,7 +112,7 @@ LaMa 모델 가중치는 코드와 라이선스가 다를 수 있으니 상업 �
 
 ## 🙏 Credits
 
-- [LaMa](https://github.com/saic-mdal/lama) — Resolution-robust Large Mask Inpainting (Suvorov et al., WACV 2022)
+- [LaMa](https://github.com/advimman/lama) — Resolution-robust Large Mask Inpainting (Suvorov et al., WACV 2022)
 - [simple_lama_inpainting](https://github.com/enesmsahin/simple-lama-inpainting) — LaMa 추론 래퍼
 - [EasyOCR](https://github.com/JaidedAI/EasyOCR) — 한국어 네이티브 OCR (PyTorch 기반)
 

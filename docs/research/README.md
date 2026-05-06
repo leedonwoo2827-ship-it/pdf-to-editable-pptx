@@ -13,7 +13,8 @@
 | 01 | [Engine Decision](01-engine-decision.md) | **LaMa**(텍스트 영역 인페인팅) + EasyOCR + python-pptx 스택을 선택한 이유 |
 | 02 | [Libraries Reviewed](02-libraries-reviewed.md) | 인페인팅 / OCR / PDF 렌더링 후보를 비교한 표 |
 | 03 | [No API Keys](03-no-api-keys.md) | 100% 로컬 실행 / 외부 API 미사용 정책 (모델 첫 다운로드만 인터넷 필요) |
-| 04 | [License Strategy](04-license-strategy.md) | MIT 본 프로젝트 + AGPL(PyMuPDF) 고지 + LaMa 가중치 출처 |
+| 04 | [License Strategy](04-license-strategy.md) | MIT 본 프로젝트, copyleft 의존성 0, LaMa 가중치 회색 지대 분석 |
+| 05 | [LaMa Integration Choice](05-lama-integration-choice.md) | `simple_lama_inpainting` 래퍼 vs `advimman/lama` 직접 사용 비교 — 왜 래퍼가 적합한가 |
 
 ## How decisions were made
 

@@ -7,8 +7,8 @@ uvicorn[standard]>=0.32,<1.0
 python-multipart>=0.0.12
 
 # --- Conversion pipeline ---
-pdfplumber>=0.10              # PDF page rendering during conversion
-PyMuPDF>=1.24,<1.25           # thread-safe PDF rendering for browser thumbnails
+pdfplumber>=0.10              # PDF page rendering during conversion (uses pypdfium2 internally)
+pypdfium2>=4.18               # also used directly in page_render.py for browser thumbnails (Apache 2.0 / BSD-3, no AGPL)
 easyocr>=1.7,<2.0             # local OCR with native Korean+English models (PyTorch backend)
 simple_lama_inpainting>=0.1   # LaMa wrapper for text-removal inpainting
 torch>=2.0                    # required by easyocr + simple_lama_inpainting (CPU build OK)

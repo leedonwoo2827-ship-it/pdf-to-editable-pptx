@@ -224,16 +224,22 @@ nvidia-smi
 
 ### 2단계: CUDA용 PyTorch 설치
 
-가상환경 활성화한 상태에서:
+가상환경 활성화한 상태에서, **반드시 기존 CPU torch를 먼저 지우고** 깔아야 합니다:
 
 ```cmd
 .venv\Scripts\activate
+pip uninstall -y torch torchvision
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
 
+> ⚠️ **흔한 함정**: 그냥 `pip install torch torchvision --index-url ...` 만 치면 pip이 *"Requirement already satisfied"*라고 출력하고 **CPU torch를 그대로 둡니다**. 그래서 위처럼 `pip uninstall`을 먼저 해서 깨끗한 상태로 만든 다음 GPU 빌드를 받아야 해요.
+>
+> 한 줄로 합치는 대안: `pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu121` — `--force-reinstall` 플래그가 같은 효과를 냅니다.
+
 > 💾 **약 2 GB 다운로드, 인터넷 속도에 따라 10–30분.**
-> CPU용 torch가 이미 깔려 있어도 GPU용으로 덮어씁니다.
 > 디스크 공간 ~3 GB 추가 필요.
+
+**확인 팁**: 다운로드 중 wheel 이름이 `torch-2.x.x+cu121-cp312-cp312-win_amd64.whl` 처럼 **`+cu121`** 태그를 포함하는지 보세요. 태그가 없으면 또 CPU 버전 받고 있는 거예요 — 그땐 `Ctrl+C`로 끊고 위 uninstall 명령부터 다시.
 
 대안: GPU 드라이버가 CUDA 12.4 이상이면 더 정확히 매칭되는 cu124 휠도 가능:
 

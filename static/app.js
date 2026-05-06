@@ -321,11 +321,11 @@ function app() {
             const img = event.target;
             this.review.bgWidth = img.naturalWidth;
             this.review.bgHeight = img.naturalHeight;
-            // 부모 div에 명시적 높이를 주면 SVG의 inset-0/h-full이 안정적으로 동작
-            // → 좌표 변환에서 SVG 실제 픽셀 높이와 viewBox 높이가 정확히 매칭됨
             const ratio = img.naturalHeight / Math.max(img.naturalWidth, 1);
             this.review.displayH = Math.round(this.review.displayW * ratio);
             this._recomputeBlockPixels();
+            // 페이지 새로 로드되면 SVG 그룹도 즉시 동기화 (이전 페이지 잔재 제거 + 현 pending 그리기)
+            this.$nextTick(() => this.renderPendingsSVG());
         },
 
         _recomputeBlockPixels() {
@@ -353,11 +353,10 @@ function app() {
         _appendPending(box) {
             const id = ++this.review._pendingIdSeq;
             const pending = {id, x: box.x, y: box.y, w: box.w, h: box.h, text: ''};
-            // Alpine reactivity: 배열 참조 자체를 갈아끼워서 x-for 재렌더를 강제.
-            // push()도 Alpine 3에서 추적되지만, SVG 안의 nested template 조합에서
-            // 가끔 재렌더가 누락되는 케이스를 봤으므로 안전한 패턴으로.
             this.review.pendings = [...this.review.pendings, pending];
             this.review.activePendingId = id;
+            // SVG에 즉시 그려넣기 (다음 마이크로태스크에 DOM 갱신을 노리고).
+            this.$nextTick(() => this.renderPendingsSVG());
             return pending;
         },
         getPending(id) {
@@ -369,6 +368,7 @@ function app() {
         setActivePending(id) {
             this.review.activePendingId = id;
             this.review.selectedIdx = null;
+            this.$nextTick(() => this.renderPendingsSVG());
         },
         removePending(id) {
             this.review.pendings = this.review.pendings.filter(p => p.id !== id);
@@ -376,6 +376,7 @@ function app() {
                 const list = this.review.pendings;
                 this.review.activePendingId = list.length > 0 ? list[list.length - 1].id : null;
             }
+            this.$nextTick(() => this.renderPendingsSVG());
         },
 
         deleteSelected() {
@@ -413,6 +414,17 @@ function app() {
         clearAllPendings() {
             this.review.pendings = [];
             this.review.activePendingId = null;
+            this.$nextTick(() => this.renderPendingsSVG());
+        },
+
+        // 사이드 패널 인풋에서 x/y/w/h 값을 직접 편집했을 때 호출.
+        onPendingCoordChange(p) {
+            // 음수·NaN 방어
+            p.x = Math.max(0, +p.x || 0);
+            p.y = Math.max(0, +p.y || 0);
+            p.w = Math.max(8, +p.w || 8);
+            p.h = Math.max(8, +p.h || 8);
+            this.renderPendingsSVG();
         },
 
         // ----- Canvas zoom (캔버스 부분만 확대, 우측 패널/툴바는 그대로) -----
@@ -427,11 +439,12 @@ function app() {
         },
 
         // SVG 안에 pending 박스/라벨/핸들을 직접 createElementNS로 그린다.
-        // Alpine x-for 가 SVG namespace 안에서 가끔 재렌더를 누락하는 이슈를
-        // 우회하기 위함 — index.html의 <g x-ref="pendingsGroup"> 가 빈 컨테이너이고,
-        // pendings/activePendingId 변경 시 $watch 가 이 함수를 호출한다.
+        // Alpine x-for 가 SVG namespace 안에서 재렌더를 누락하는 이슈가 있어서,
+        // 각 mutation 함수가 명시적으로 renderPendingsSVG() 를 호출해 동기화함.
+        // 컨테이너는 #pendings-svg-group ID로 직접 querySelector — Alpine $refs도
+        // SVG에서는 가끔 늦게 바인딩되는 케이스가 있어 querySelector가 더 안전.
         renderPendingsSVG() {
-            const g = this.$refs && this.$refs.pendingsGroup;
+            const g = document.getElementById('pendings-svg-group');
             if (!g) return;
             const SVG_NS = 'http://www.w3.org/2000/svg';
             // 기존 자식들 제거.
@@ -683,6 +696,8 @@ function app() {
                     if (nw >= minSize) { target.w = nw; }
                     if (nh >= minSize) { target.h = nh; }
                 }
+                // pending 위치/크기 변경 → SVG 즉시 갱신
+                this.renderPendingsSVG();
                 return;
             }
             // 1) 기존 박스 이동 중
@@ -775,6 +790,7 @@ function app() {
                 const data = await r.json();
                 if (data.ok && data.block && data.block.text) {
                     target.text = data.block.text;
+                    this.$nextTick(() => this.renderPendingsSVG());
                     this.showToast(`OCR 결과: "${data.block.text.slice(0, 30)}"`);
                 } else {
                     this.showToast(data.message || 'OCR이 텍스트를 찾지 못했습니다. 직접 입력해주세요.');

@@ -188,12 +188,11 @@
                                 </template>
                             </g>
                         </template>
-                        <!-- 새로 그린 영역들 — Alpine x-for + SVG namespace 호환성 이슈를 피하기 위해
-                             빈 <g> 컨테이너만 두고, 실제 rect/text/handle 요소는 app.js의
-                             renderPendingsSVG()가 createElementNS로 직접 그린다.
-                             $watch('review.pendings'/'review.activePendingId') 가 트리거. -->
-                        <g x-ref="pendingsGroup"
-                           x-init="$watch('review.pendings', () => renderPendingsSVG()); $watch('review.activePendingId', () => renderPendingsSVG())"></g>
+                        <!-- 새로 그린 영역들 — 빈 <g> 컨테이너. app.js의 renderPendingsSVG()가
+                             createElementNS로 rect/text/handle을 직접 그려 넣는다.
+                             SVG 내부에서 Alpine x-init이 실행 안 되는 케이스가 있어서,
+                             각 mutation 함수가 직접 renderPendingsSVG()를 호출함. -->
+                        <g id="pendings-svg-group"></g>
                         <!-- 브러시 도구로 색칠 중 -->
                         <polyline x-show="review.brushPoints.length > 0"
                                   :points="review.brushPoints.map(p => p.x + ',' + p.y).join(' ')"
@@ -272,6 +271,33 @@
                             <input x-model="p.text" type="text" placeholder="텍스트 직접 입력 또는 OCR 사용"
                                    @click.stop=""
                                    class="w-full border border-amber-300 rounded px-2 py-1 text-sm" />
+                            <!-- 박스 위치/크기 직접 편집 (단위: 페이지 이미지 픽셀, (0,0) = 좌상단) -->
+                            <div class="grid grid-cols-4 gap-1 text-[10px] text-amber-800" @click.stop="">
+                                <label class="flex flex-col items-start">
+                                    <span>X</span>
+                                    <input type="number" :value="Math.round(p.x)"
+                                           @change="p.x = +$event.target.value; onPendingCoordChange(p)"
+                                           class="w-full border border-amber-300 rounded px-1 py-0.5 text-xs" />
+                                </label>
+                                <label class="flex flex-col items-start">
+                                    <span>Y</span>
+                                    <input type="number" :value="Math.round(p.y)"
+                                           @change="p.y = +$event.target.value; onPendingCoordChange(p)"
+                                           class="w-full border border-amber-300 rounded px-1 py-0.5 text-xs" />
+                                </label>
+                                <label class="flex flex-col items-start">
+                                    <span>W</span>
+                                    <input type="number" :value="Math.round(p.w)"
+                                           @change="p.w = +$event.target.value; onPendingCoordChange(p)"
+                                           class="w-full border border-amber-300 rounded px-1 py-0.5 text-xs" />
+                                </label>
+                                <label class="flex flex-col items-start">
+                                    <span>H</span>
+                                    <input type="number" :value="Math.round(p.h)"
+                                           @change="p.h = +$event.target.value; onPendingCoordChange(p)"
+                                           class="w-full border border-amber-300 rounded px-1 py-0.5 text-xs" />
+                                </label>
+                            </div>
                             <button @click.stop="addPendingManual(p.id)"
                                     :disabled="!p.text.trim() || review.committing"
                                     class="w-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded px-2 py-1 disabled:opacity-50">

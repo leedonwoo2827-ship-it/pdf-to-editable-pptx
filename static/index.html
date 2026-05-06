@@ -131,6 +131,9 @@
                          @mousemove="reviewMouseMove($event)"
                          @mouseup="reviewMouseUp($event)"
                          @mouseleave="reviewMouseUp($event)">
+                        <!-- 투명 배경 rect — SVG의 빈 영역에서도 mousedown 이벤트가 발화되도록.
+                             자동 검출된 블록이 0개인 페이지에서 사각형/색칠 도구가 안 되던 문제 해결. -->
+                        <rect x="0" y="0" :width="review.bgWidth" :height="review.bgHeight" fill="white" fill-opacity="0" />
                         <!-- 기존 검출된 블록 (이동 가능, 선택 시 코너 핸들로 리사이즈) -->
                         <template x-for="(b, idx) in review.blocks" :key="idx">
                             <g>

@@ -120,7 +120,9 @@ function app() {
         },
         estimateTime() {
             if (!this.job) return '';
-            const perPage = this.dpi >= 250 ? 80 : this.dpi >= 200 ? 50 : this.dpi >= 150 ? 30 : 20;
+            // Rough CPU-mode estimates (seconds/page). GPU mode is ~10x faster
+            // — the elapsed counter in the running view tells the truth.
+            const perPage = this.dpi >= 300 ? 90 : this.dpi >= 250 ? 70 : 50;
             const total = this.job.page_count * perPage;
             if (total < 60) return `~${total}s`;
             const m = Math.round(total / 60);

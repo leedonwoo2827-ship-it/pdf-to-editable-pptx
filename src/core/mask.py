@@ -25,10 +25,14 @@ from src.core.ocr import OcrResult
 
 
 # Adaptive dilation: average_text_height * this ratio, clamped to the
-# (min, max) below.
-DILATION_HEIGHT_RATIO = 0.20
+# (min, max) below. Tuned to be a bit aggressive — covers glyph
+# tails / serifs that the OCR bbox cuts off, so LaMa doesn't leave
+# faint smears at the edge of removed text. Trade-off: very close
+# graphics can also get eaten if their distance to text is < the
+# dilation amount, but most slide layouts keep text clear of icons.
+DILATION_HEIGHT_RATIO = 0.25
 DILATION_MIN_PX = 15
-DILATION_MAX_PX = 40
+DILATION_MAX_PX = 50
 
 # Per-bbox poly expansion before fillPoly.
 BBOX_EXPAND_RATIO = 1.10

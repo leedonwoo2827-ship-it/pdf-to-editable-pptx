@@ -24,10 +24,9 @@
         <div x-show="job && !running && !complete" class="flex items-center gap-2 text-sm">
             <label class="text-slate-600">Quality (DPI):</label>
             <select x-model.number="dpi" class="border border-slate-300 rounded px-2 py-1 text-sm bg-white">
-                <option :value="100">100 (fast)</option>
-                <option :value="150">150</option>
                 <option :value="200">200 (recommended)</option>
-                <option :value="250">250 (slow, sharpest)</option>
+                <option :value="250">250 (sharper)</option>
+                <option :value="300">300 (slowest, sharpest)</option>
             </select>
         </div>
 

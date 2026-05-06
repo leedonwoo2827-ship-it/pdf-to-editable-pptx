@@ -320,7 +320,7 @@ python app.py
 | GPU (구형 GTX 1060/1070, 6GB) | 5–15초 | 1–3분 |
 
 VRAM이 부족하면(2–4GB) LaMa가 OOM(out of memory)으로 떨어질 수 있습니다.
-이 경우 변환 DPI를 낮추거나(200→150) CPU로 회귀.
+이 경우 변환 DPI를 200으로 유지(최저값)하거나 CPU로 회귀.
 
 ---
 

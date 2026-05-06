@@ -11,6 +11,7 @@ pdfplumber>=0.10              # PDF page rendering during conversion (uses pypdf
 pypdfium2>=4.18               # also used directly in page_render.py for browser thumbnails (Apache 2.0 / BSD-3, no AGPL)
 paddleocr>=2.7,<3.0           # local OCR — Korean-native model (lang='korean'), strongest open-source for KR
 paddlepaddle>=2.5,<3.0        # PaddleOCR backend framework (CPU build by default; GPU build available separately)
+albumentations>=1.4,<2.0      # paddleocr transitive dep; pin <2.0 — albumentations 2.x eagerly imports torch.pytorch and hits a Windows DLL load bug (WinError 127 on shm.dll)
 simple_lama_inpainting>=0.1   # LaMa wrapper for text-removal inpainting
 torch>=2.0                    # required by easyocr + simple_lama_inpainting (CPU build OK)
 torchvision>=0.15

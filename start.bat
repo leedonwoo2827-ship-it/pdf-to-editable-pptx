@@ -17,7 +17,7 @@ set "PYTHON_CMD="
 
 REM ---- 1) Try .venv if present ----
 if exist .venv\Scripts\python.exe (
-    .venv\Scripts\python.exe -c "import uvicorn, fastapi, pypdfium2, easyocr, simple_lama_inpainting" >nul 2>nul
+    .venv\Scripts\python.exe -c "import uvicorn, fastapi, pypdfium2, paddleocr, simple_lama_inpainting" >nul 2>nul
     if not errorlevel 1 (
         set "PYTHON_CMD=.venv\Scripts\python.exe"
         echo Using virtual environment in .venv
@@ -38,7 +38,7 @@ if "!PYTHON_CMD!"=="" (
         pause
         exit /b 1
     )
-    python -c "import uvicorn, fastapi, pypdfium2, easyocr, simple_lama_inpainting" >nul 2>nul
+    python -c "import uvicorn, fastapi, pypdfium2, paddleocr, simple_lama_inpainting" >nul 2>nul
     if not errorlevel 1 (
         set "PYTHON_CMD=python"
         echo Using system Python

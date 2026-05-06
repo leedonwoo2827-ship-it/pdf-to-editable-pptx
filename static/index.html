@@ -81,7 +81,7 @@
                 100% local — no API key, no cloud, no rate limits.
             </p>
             <p class="text-slate-500 text-xs mb-6">
-                Powered by LaMa inpainting + EasyOCR (Korean+English native).
+                Powered by LaMa inpainting + PaddleOCR (Korean-native).
                 First-run model download: ~200 MB.
             </p>
             <label class="cursor-pointer inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5 rounded shadow">
@@ -355,7 +355,7 @@
                     on your machine.
                 </p>
                 <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
-                    <li>Each page: render → OCR (EasyOCR · Korean) → text removal (LaMa) → editable text overlay</li>
+                    <li>Each page: render → OCR (PaddleOCR · Korean) → text removal (LaMa) → editable text overlay</li>
                     <li>First run downloads ~200 MB LaMa model (one-time)</li>
                     <li>CPU mode is slower (~30–60s per page); GPU mode is ~2–5s/page</li>
                 </ul>

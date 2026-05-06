@@ -1,6 +1,6 @@
 """OCR engine wrapper.
 
-Wraps EasyOCR with Korean+English language pack and project-specific
+Wraps PaddleOCR with Korean (`lang='korean'`) and project-specific
 result hygiene:
 
 1. Confidence + size filter — drop low-score, single-character non-Korean,
@@ -11,12 +11,13 @@ result hygiene:
    headings) that the first pass missed often gets picked up on the
    sparser second pass.
 
-This module owns EasyOCR initialization. Anything outside this file
-should not import easyocr directly.
+This module owns PaddleOCR initialization. Anything outside this file
+should not import paddleocr directly.
 
-EasyOCR with langs=['ko', 'en'] uses Korean-native recognition models, so
-we don't need the Chinese-character cleanup that a Chinese-trained model
-would force on us.
+PaddleOCR with lang='korean' uses Korean-native recognition models
+trained jointly with Korean training data — generally stronger than
+EasyOCR on small Korean glyphs, and notably stronger than the
+multilingual default models on slide-deck-style mixed text.
 """
 from __future__ import annotations
 
@@ -24,8 +25,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import cv2
-import easyocr
 import numpy as np
+from paddleocr import PaddleOCR
 
 
 # Confidence + size filters
@@ -33,7 +34,13 @@ MIN_OCR_SCORE = 0.5
 MIN_TEXT_LEN = 2  # at least 2 chars unless Korean (single hangul ok)
 MIN_BBOX_AREA_RATIO = 1e-4  # bbox_w * bbox_h / page_w * page_h
 
-DEFAULT_LANGS: tuple[str, ...] = ("ko", "en")
+# PaddleOCR's lang code. 'korean' covers Hangul + Latin reasonably well;
+# the recognition model is Korean-native and trained on mixed-script data.
+DEFAULT_LANG = "korean"
+# We keep the public param name 'langs' for symmetry with the previous
+# EasyOCR-based interface, but PaddleOCR only takes a single language
+# string per Reader instance — we pick the first.
+DEFAULT_LANGS: tuple[str, ...] = ("korean",)
 
 # Hangul ranges (syllables + jamo + compat). Used to keep single-char
 # results that are obviously Korean.
@@ -98,14 +105,14 @@ def _dedupe_against(
 
 
 class OcrEngine:
-    """EasyOCR + project-specific result hygiene.
+    """PaddleOCR + project-specific result hygiene.
 
-    Construct once per process and reuse across pages — the model load
-    is what's expensive (~70 MB of weights downloaded on first use, then
-    cached). Once loaded, calls are fast.
+    Construct once per process and reuse across pages — model load is
+    expensive (~hundreds of MB of paddlepaddle + model files on first
+    use). After load, calls are fast enough on CPU and very fast on GPU.
 
-    Thread-safety: EasyOCR's Reader is not designed for concurrent
-    readtext calls from multiple threads. The conversion pipeline
+    Thread-safety: PaddleOCR's PaddleOCR.ocr() is not designed for
+    concurrent calls from multiple threads. The conversion pipeline
     serializes pages anyway, so this is fine for our use.
     """
 
@@ -114,17 +121,25 @@ class OcrEngine:
         langs: Sequence[str] = DEFAULT_LANGS,
         use_gpu: bool | None = None,
     ) -> None:
-        self.langs = tuple(langs)
-        self.use_gpu = use_gpu  # None = auto-detect via easyocr default
-        self._reader: easyocr.Reader | None = None
+        # PaddleOCR takes a single lang per Reader. Ignore extras for now.
+        self.lang = langs[0] if langs else DEFAULT_LANG
+        self.use_gpu = use_gpu  # None = auto-detect via paddle defaults
+        self._reader: PaddleOCR | None = None
 
     def ensure_loaded(self) -> None:
         if self._reader is not None:
             return
-        kwargs: dict = {}
+        kwargs: dict = {
+            "lang": self.lang,
+            # use_angle_cls=True helps with rotated text (common in slide
+            # diagrams — labels along arrows, etc.).
+            "use_angle_cls": True,
+            # show_log=False to keep our progress UI uncluttered.
+            "show_log": False,
+        }
         if self.use_gpu is not None:
-            kwargs["gpu"] = bool(self.use_gpu)
-        self._reader = easyocr.Reader(list(self.langs), **kwargs)
+            kwargs["use_gpu"] = bool(self.use_gpu)
+        self._reader = PaddleOCR(**kwargs)
 
     # --- Single pass ---
 
@@ -133,18 +148,37 @@ class OcrEngine:
         OcrResult list with raw (no filtering) hits."""
         self.ensure_loaded()
         assert self._reader is not None
-        # readtext returns list of (box, text, score). box is a list of
-        # 4 [x, y] points (numpy ints). text is str. score is float.
-        raw = self._reader.readtext(image_np)
+        # PaddleOCR.ocr returns: [[(box, (text, score)), ...]] for older
+        # API or [[box, text, score], ...] depending on version. Normalize.
+        raw = self._reader.ocr(image_np, cls=True)
+        if not raw:
+            return []
+        # PaddleOCR wraps in an extra list (one per image; we pass one image).
+        if isinstance(raw, list) and len(raw) == 1 and isinstance(raw[0], list):
+            raw = raw[0]
+        if raw is None:
+            return []
+
         out: list[OcrResult] = []
         for item in raw:
+            if not item:
+                continue
             try:
-                box, text, score = item
-            except (ValueError, TypeError):
+                # New API: [box, (text, score)]
+                box = item[0]
+                text_score = item[1]
+                if isinstance(text_score, (list, tuple)) and len(text_score) >= 2:
+                    text, score = text_score[0], text_score[1]
+                else:
+                    text, score = str(text_score), 1.0
+            except (TypeError, IndexError, ValueError):
                 continue
             # Normalize box points to plain Python lists so they survive
             # JSON serialization in the workspace state files.
-            box_list = [[float(p[0]), float(p[1])] for p in box]
+            try:
+                box_list = [[float(p[0]), float(p[1])] for p in box]
+            except (TypeError, IndexError, ValueError):
+                continue
             out.append(OcrResult(box=box_list, text=str(text), score=float(score)))
         return out
 

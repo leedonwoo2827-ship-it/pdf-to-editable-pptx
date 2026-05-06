@@ -149,7 +149,7 @@ install.bat
 
 1. Python 3.10–3.12 검사 (3.13/3.14면 거부)
 2. **5초 카운트다운 경고** — `Ctrl+C`로 취소 가능
-3. 시스템 Python에 이미 있는 패키지(`torch`, `easyocr`, `simple_lama_inpainting`)를 미리 표시 → 무엇이 다운로드되고 무엇이 스킵되는지 사용자에게 보여줌
+3. 시스템 Python에 이미 있는 패키지(`torch`, `paddleocr`, `simple_lama_inpainting`)를 미리 표시 → 무엇이 다운로드되고 무엇이 스킵되는지 사용자에게 보여줌
 4. `pip install -r requirements.txt` — 이미 설치된 패키지는 자동으로 스킵
 
 #### 언제 `install.bat`이 유리한가
@@ -267,7 +267,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 > pip install "numpy<2.0" "pillow<11.0"
 > ```
 >
-> → numpy 1.26.x, pillow 10.4.x로 떨어집니다. torch / torchvision / easyocr / opencv-python 모두 이 범위 지원하므로 안전.
+> → numpy 1.26.x, pillow 10.4.x로 떨어집니다. torch / torchvision / paddleocr / opencv-python 모두 이 범위 지원하므로 안전.
 
 `requirements.txt`에는 **`numpy>=1.24,<2.0` / `Pillow>=10.0,<11.0`** 으로 상한이 걸려 있어서, 처음부터 `setup.bat`으로 깐 환경에서는 이 함정에 안 걸립니다. **함정 2는 이미 깔린 환경에서 CUDA torch로 갈아탈 때만 발생**해요.
 
@@ -371,7 +371,7 @@ start.bat
 ```
 
 ### 첫 실행이 한참 멈춘 것 같음
-정상입니다. **PyTorch + LaMa 모델 가중치 + EasyOCR 한·영 모델**(~합 1 GB 가까이)을
+정상입니다. **PyTorch + LaMa 모델 가중치 + PaddleOCR 한국어 모델**(~합 1 GB 가까이)을
 처음 한 번만 다운로드합니다. 이후 실행은 즉시 시작합니다.
 
 ### 브라우저가 안 열림
@@ -379,6 +379,6 @@ start.bat
 `http://127.0.0.1:8000` 으로 접속하세요.
 
 ### 한국어가 깨지거나 한자가 섞여 나온다
-EasyOCR의 `['ko', 'en']` 모델이 본 프로젝트의 기본값입니다 ([src/core/ocr.py](../src/core/ocr.py#L57)).
+PaddleOCR의 `lang='korean'` 모델이 본 프로젝트의 기본값입니다 ([src/core/ocr.py](../src/core/ocr.py)).
 그래도 정확도가 부족하면 [docs/research/02-libraries-reviewed.md](research/02-libraries-reviewed.md)의
 "Escalation path" — PaddleOCR(`lang='korean'`)로 갈아타기 — 를 검토하세요.

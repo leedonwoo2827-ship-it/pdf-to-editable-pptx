@@ -67,7 +67,7 @@ python app.py
 페이지마다:
 
 1. **pdfplumber** — PDF 페이지 → 이미지
-2. **EasyOCR** (`['ko', 'en']`) — 텍스트 위치·내용 검출 (한·영 네이티브 모델)
+2. **PaddleOCR** (`lang='korean'`) — 텍스트 위치·내용 검출 (한국어 네이티브 모델, 작은 글자 검출 강함)
 3. **LaMa** (PyTorch) — 검출된 텍스트만 깨끗이 지움
 4. **python-pptx** — 깨끗한 배경 + 편집 가능한 텍스트박스로 슬라이드 구성
 
@@ -114,7 +114,7 @@ LaMa 모델 가중치는 코드와 라이선스가 다를 수 있으니 상업 �
 
 - [LaMa](https://github.com/advimman/lama) — Resolution-robust Large Mask Inpainting (Suvorov et al., WACV 2022)
 - [simple_lama_inpainting](https://github.com/enesmsahin/simple-lama-inpainting) — LaMa 추론 래퍼
-- [EasyOCR](https://github.com/JaidedAI/EasyOCR) — 한국어 네이티브 OCR (PyTorch 기반)
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) — 한국어 네이티브 OCR (PaddlePaddle 기반, 작은 글자에 강함)
 
 ---
 
@@ -124,5 +124,5 @@ LaMa 모델 가중치는 코드와 라이선스가 다를 수 있으니 상업 �
 |---|---|
 | [docs/install.md](docs/install.md) | 설치 가이드 (Windows 스크린샷 포함) |
 | [docs/usage.md](docs/usage.md) | 사용법 (스크린샷 포함) |
-| [docs/research/](docs/research/) | 설계 결정 트레일 (왜 LaMa? 왜 EasyOCR? 라이선스 전략?) |
+| [docs/research/](docs/research/) | 설계 결정 트레일 (왜 LaMa? 왜 PaddleOCR? 라이선스 전략?) |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 의존성 라이선스 고지 |

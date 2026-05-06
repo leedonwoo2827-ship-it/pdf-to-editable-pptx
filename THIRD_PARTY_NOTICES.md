@@ -31,20 +31,26 @@
 
 ## OCR
 
-### EasyOCR
+### PaddleOCR
 
-- **Repository**: https://github.com/JaidedAI/EasyOCR
+- **Repository**: https://github.com/PaddlePaddle/PaddleOCR
 - **License**: Apache License 2.0
-- **Role**: 한·영 텍스트 검출 + 인식. 본 프로젝트는 `langs=['ko', 'en']`로 한국어 네이티브 모델을 사용합니다. PyTorch 백엔드 (LaMa와 공유).
-- **Models**: 첫 호출 시 한국어/영어 인식 모델과 텍스트 검출 모델이 자동 다운로드됩니다 (~70 MB 합산). 가중치 라이선스는 Apache 2.0 (코드와 동일).
+- **Role**: 한국어 텍스트 검출 + 인식. 본 프로젝트는 `lang='korean'` 으로 한국어 네이티브 모델을 사용합니다 (PaddlePaddle 백엔드).
+- **Models**: 첫 호출 시 한국어 인식 모델 + 텍스트 검출(DB) 모델 + 각도 분류기가 자동 다운로드됩니다 (~수십 MB 합산). 가중치 라이선스는 Apache 2.0 (코드와 동일).
 
-### EasyOCR이 의존하는 추가 패키지
+### PaddlePaddle (PaddleOCR 백엔드)
 
-- **python-bidi** (BSD-style) — 양방향 텍스트 처리
+- **Repository**: https://github.com/PaddlePaddle/Paddle
+- **License**: Apache License 2.0
+- **Role**: PaddleOCR이 사용하는 딥러닝 프레임워크. CPU/GPU 둘 다 지원. 본 저장소의 requirements.txt는 CPU 기본 빌드를 명시.
+
+### PaddleOCR이 의존하는 추가 패키지
+
 - **Shapely** (BSD 3-Clause) — 폴리곤 기하 연산
 - **pyclipper** (MIT) — 폴리곤 오프셋 (텍스트 영역 확장)
+- **lmdb**, **imgaug**, **scikit-image** 등 (BSD/MIT 계열)
 
-이 패키지들은 EasyOCR 설치 시 자동으로 함께 깔립니다.
+이 패키지들은 PaddleOCR 설치 시 자동으로 함께 깔립니다.
 
 ---
 
@@ -147,7 +153,7 @@
 | 라이선스 | 사용 항목 | 의무 |
 |---|---|---|
 | MIT | FastAPI, python-pptx, pdfplumber, simple_lama_inpainting, pyclipper, Pydantic, Tailwind, Alpine, **본 프로젝트** | 라이선스 고지 |
-| Apache 2.0 | LaMa 코드, EasyOCR, opencv-python, python-multipart, pypdfium2 (바인딩) | 라이선스 고지 + 변경 사항 표시 |
+| Apache 2.0 | LaMa 코드, PaddleOCR, PaddlePaddle, opencv-python, python-multipart, pypdfium2 (바인딩) | 라이선스 고지 + 변경 사항 표시 |
 | BSD-style | python-bidi, Shapely | 라이선스 고지 |
 | BSD 3-Clause | Uvicorn, NumPy, PyTorch, pypdfium2 (PDFium 코어) | 라이선스 고지 |
 | HPND | Pillow | 라이선스 고지 |
@@ -160,4 +166,4 @@
 ## Acknowledgments
 
 - LaMa 알고리즘에 대한 모든 신용은 Roman Suvorov, Elizaveta Logacheva, Anton Mashikhin, Anastasia Remizova, Arsenii Ashukha, Aleksei Silvestrov, Naejin Kong, Harshith Goka, Kiwoong Park, Victor Lempitsky 및 SAIC 연구진에게 있습니다.
-- EasyOCR의 한국어 인식 모델은 JaidedAI 팀이 학습·배포하고 있습니다.
+- PaddleOCR의 한국어 인식 모델은 PaddlePaddle / PaddleOCR 팀(Baidu 및 오픈소스 컨트리뷰터)이 학습·배포하고 있습니다.

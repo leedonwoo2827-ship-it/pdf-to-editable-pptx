@@ -1,7 +1,7 @@
 # Research & Decision Records
 
 이 폴더는 **PDF → Editable PowerPoint** 프로젝트의 설계 결정 근거를 보관합니다.
-"왜 LaMa인가? 왜 EasyOCR인가? 왜 100% 로컬인가? 라이선스는 어떻게 정리되는가?"
+"왜 LaMa인가? 왜 PaddleOCR인가? 왜 100% 로컬인가? 라이선스는 어떻게 정리되는가?"
 저장소를 처음 보는 사람이 즉시 따라잡을 수 있게 정리되어 있습니다.
 
 > 최종 갱신: **2026-05-06** — LaMa 기반 로컬 파이프라인으로 정리.
@@ -10,7 +10,7 @@
 
 | # | Document | 요약 |
 |---|---|---|
-| 01 | [Engine Decision](01-engine-decision.md) | **LaMa**(텍스트 영역 인페인팅) + EasyOCR + python-pptx 스택을 선택한 이유 |
+| 01 | [Engine Decision](01-engine-decision.md) | **LaMa**(텍스트 영역 인페인팅) + PaddleOCR + python-pptx 스택을 선택한 이유 |
 | 02 | [Libraries Reviewed](02-libraries-reviewed.md) | 인페인팅 / OCR / PDF 렌더링 후보를 비교한 표 |
 | 03 | [No API Keys](03-no-api-keys.md) | 100% 로컬 실행 / 외부 API 미사용 정책 (모델 첫 다운로드만 인터넷 필요) |
 | 04 | [License Strategy](04-license-strategy.md) | MIT 본 프로젝트, copyleft 의존성 0, LaMa 가중치 회색 지대 분석 |
@@ -38,7 +38,7 @@ PDF
 pdfplumber  ──► page → PIL.Image (DPI 200 권장)
  │
  ▼
-EasyOCR (`langs=['ko','en']`)  ──► [(bbox, text, score), …]
+PaddleOCR (`lang='korean'`)  ──► [(bbox, text, score), …]
  │
  ▼
 mask 생성 (cv2.fillPoly + dilate)

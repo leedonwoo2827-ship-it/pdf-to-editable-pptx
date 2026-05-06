@@ -35,7 +35,7 @@ cleaned = self._lama(pil_image, mask)    # (이미지, 마스크) → 텍스트 
 | 단계 | 모듈 / 라이브러리 | 역할 |
 |---|---|---|
 | PDF 렌더 | [pdf_pages.py](../../src/core/pdf_pages.py) (`pdfplumber`) / [page_render.py](../../src/core/page_render.py) (`pypdfium2`) | 페이지 → PIL.Image (변환 / 썸네일) — 둘 다 PDFium 기반, 각자 lock으로 직렬화 |
-| OCR | [ocr.py](../../src/core/ocr.py) (`easyocr`, `langs=['ko','en']`) | 텍스트 bbox + 내용 (한국어 네이티브) |
+| OCR | [ocr.py](../../src/core/ocr.py) (`paddleocr`, `lang='korean'`) | 텍스트 bbox + 내용 (한국어 네이티브, 작은 글자 강함) |
 | 마스크 후처리 | [mask.py](../../src/core/mask.py) (`opencv-python`) | `fillPoly` + adaptive `dilate` (텍스트 두께만큼 확장) |
 | **인페인팅** | [**inpaint.py**](../../src/core/inpaint.py) (**`simple_lama_inpainting`**) | **텍스트 영역만 깨끗이 제거** |
 | PPTX 작성 | [slide_writer.py](../../src/core/slide_writer.py) (`python-pptx`) | 16:9 letterbox + 편집 가능한 텍스트박스 |
@@ -64,7 +64,7 @@ LaMa가 텍스트만 지우고 **나머지 픽셀(로고, 차트, 사진, 배경
 
 ### 100% 로컬, API 키 불필요
 
-LaMa, EasyOCR, pdfplumber, python-pptx 모두 로컬에서 동작합니다.
+LaMa, PaddleOCR, pdfplumber, python-pptx 모두 로컬에서 동작합니다.
 PyTorch와 LaMa 모델 가중치(~700 MB)는 첫 실행 시 자동 다운로드되고, 그
 이후로는 인터넷 연결 없이 동작합니다. 사용자 PDF가 외부 서버로 전송되지
 않으므로 사내·기밀 문서에도 사용 가능합니다.
@@ -90,27 +90,21 @@ PyTorch와 LaMa 모델 가중치(~700 MB)는 첫 실행 시 자동 다운로드�
 래핑한 [`simple_lama_inpainting`](https://github.com/enesmsahin/simple-lama-inpainting)
 패키지를 사용합니다. PyPI 한 줄 설치로 모델 다운로드까지 자동 처리됩니다.
 
-### OCR은 EasyOCR (`langs=['ko', 'en']`)로
+### OCR은 PaddleOCR (`lang='korean'`)로
 
-PaddleOCR · RapidOCR · Tesseract 등을 검토한 끝에
-[EasyOCR](https://github.com/JaidedAI/EasyOCR)을 선택한 이유:
+RapidOCR → EasyOCR → PaddleOCR 순으로 escalation했습니다. 최종 채택은
+[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR):
 
-- **한국어 네이티브 모델** — `easyocr.Reader(['ko', 'en'])` 한 줄로 한국어
-  전용 인식 모델이 활성화됩니다. 중국어 모델 기반 OCR이 한국어 페이지에서
-  글자를 한자로 오인식하던 문제가 본질적으로 사라집니다.
-- **PyTorch 백엔드 공유** — LaMa가 어차피 PyTorch를 쓰므로 추가 ML
-  프레임워크 없이 백엔드를 공유합니다.
-- **PaddlePaddle 미사용** — Paddle은 무겁고 Windows에서 설치 이슈가 잦음.
-  EasyOCR은 그런 부담이 없습니다.
-- **단순한 출력 포맷** — `[(box, text, score), ...]` 형태라 후처리 코드가
-  짧습니다.
+- **한국어 SOTA 정확도** — `lang='korean'` 모델이 한국어 OCR 분야에서 가장 잘 학습된 오픈소스 모델 중 하나. EasyOCR은 다이어그램 안 작은 영어 라벨(예: FLOW_ROUTER, STATE_MANAGER)을 자주 놓쳤지만, PaddleOCR DB+CRNN은 작은 글자 검출에 뚜렷이 강함.
+- **검증된 다국어** — 한국어 + 영어 혼합 페이지를 단일 호출로 처리.
+- **각도 분류기 (use_angle_cls)** — 다이어그램 내 회전 텍스트(화살표 위 라벨 등)도 처리.
+- **PaddlePaddle 의존** — 프레임워크는 무겁지만(설치 ~수백 MB) 한 번 깔리면 안정적.
 
-자세한 비교 매트릭스와 escalation path(EasyOCR로도 부족할 때 PaddleOCR로
-갈아타는 절차)는 [02-libraries-reviewed.md](02-libraries-reviewed.md) 참고.
+자세한 비교 매트릭스는 [02-libraries-reviewed.md](02-libraries-reviewed.md) 참고. 이전 EasyOCR/RapidOCR 시도는 그 표에 보존되어 있습니다.
 
 ## Options considered
 
-### Option A: LaMa + EasyOCR + python-pptx (선택)
+### Option A: LaMa + PaddleOCR + python-pptx (선택)
 - ✅ 이미지-only PDF 입력에서도 동작
 - ✅ 1:1 시각 충실도 (배경 픽셀 보존)
 - ✅ 100% 로컬, API 키 없음
@@ -165,7 +159,7 @@ PaddleOCR · RapidOCR · Tesseract 등을 검토한 끝에
 - [x] `simple_lama_inpainting`이 PyPI에 존재 (`pip install simple_lama_inpainting`)
 - [x] `from simple_lama_inpainting import SimpleLama`로 import 성공
 - [x] `SimpleLama()(pil_image, mask_pil)` 호출이 PIL 이미지를 반환
-- [x] `easyocr.Reader(['ko', 'en'])`가 한·영 혼합 페이지에서 bbox + text + score를 반환
+- [x] `PaddleOCR(lang='korean').ocr()`이 한국어 페이지에서 bbox + text + score를 반환
 - [x] `pdfplumber`로 PDF → 200 DPI PIL.Image 렌더링 성공
 - [x] CPU 환경에서 end-to-end 변환 성공 (`tests/` 픽스처)
 - [x] requirements.txt에 OpenAI / Anthropic / Google SDK 부재
@@ -175,4 +169,5 @@ PaddleOCR · RapidOCR · Tesseract 등을 검토한 끝에
 - LaMa 논문: Suvorov et al., "Resolution-robust Large Mask Inpainting with Fourier Convolutions" (WACV 2022) — https://arxiv.org/abs/2109.07161
 - LaMa 원 저장소: https://github.com/advimman/lama
 - simple_lama_inpainting (사용 패키지): https://github.com/enesmsahin/simple-lama-inpainting
-- EasyOCR: https://github.com/JaidedAI/EasyOCR
+- PaddleOCR: https://github.com/PaddlePaddle/PaddleOCR
+- EasyOCR (이전 시도): https://github.com/JaidedAI/EasyOCR

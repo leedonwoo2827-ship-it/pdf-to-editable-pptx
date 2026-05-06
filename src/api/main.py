@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# IMPORTANT: import torch BEFORE anything that might pull in paddlepaddle.
+# paddlepaddle (paddleocr's backend) tweaks Windows DLL search paths during
+# its own import, which then breaks torch's shm.dll loader (WinError 127).
+# Loading torch first locks its DLLs in place so the subsequent paddleocr
+# import can't dislodge them. This single line fixes the import-order
+# crash that otherwise blocks `start.bat` from launching the server.
+import torch  # noqa: F401  (intentionally unused — preload only)
+
 from pathlib import Path
 
 from fastapi import FastAPI

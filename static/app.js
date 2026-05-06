@@ -344,7 +344,10 @@ function app() {
         _appendPending(box) {
             const id = ++this.review._pendingIdSeq;
             const pending = {id, x: box.x, y: box.y, w: box.w, h: box.h, text: ''};
-            this.review.pendings.push(pending);
+            // Alpine reactivity: 배열 참조 자체를 갈아끼워서 x-for 재렌더를 강제.
+            // push()도 Alpine 3에서 추적되지만, SVG 안의 nested template 조합에서
+            // 가끔 재렌더가 누락되는 케이스를 봤으므로 안전한 패턴으로.
+            this.review.pendings = [...this.review.pendings, pending];
             this.review.activePendingId = id;
             return pending;
         },
@@ -483,15 +486,35 @@ function app() {
             if (this.review.movingBlock) return;
 
             const p = this._svgPoint(event);
-            // 새로 그리기 시작하는 시점엔 기존 펜딩 보존 — 사용자가 여러 영역을 동시에 만들 수 있게.
             this.review.selectedIdx = null;
 
             if (this.review.tool === 'brush') {
                 this.review.brushPoints = [p];
-            } else {
-                this.review._dragStart = p;
-                this.review.drawing = {x: p.x, y: p.y, w: 0, h: 0};
+                return;
             }
+
+            // 사각형 도구: 클릭 즉시 클릭 위치에 기본 크기 박스 생성 + 그대로 move drag 시작.
+            // 마우스를 떼지 않고 드래그하면 박스가 따라오고, 떼면 거기서 멈춤.
+            // 드래그-크기-그리기 모델은 폐기 — 단순한 "클릭→이동"이 더 직관적.
+            const W = this.review.bgWidth || 1000;
+            const H = this.review.bgHeight || 1000;
+            const defaultW = Math.max(220, W * 0.15);
+            const defaultH = Math.max(56, H * 0.05);
+            let bx = p.x - defaultW / 2;
+            let by = p.y - defaultH / 2;
+            bx = Math.max(0, Math.min(bx, W - defaultW));
+            by = Math.max(0, Math.min(by, H - defaultH));
+            const newPending = this._appendPending({x: bx, y: by, w: defaultW, h: defaultH});
+            this.review.pendingDrag = {
+                pending: newPending,
+                handle: 'move',
+                startX: p.x,
+                startY: p.y,
+                origX: newPending.x,
+                origY: newPending.y,
+                origW: newPending.w,
+                origH: newPending.h,
+            };
         },
 
         reviewMouseMove(event) {
@@ -606,17 +629,8 @@ function app() {
                 this.review.brushPoints.push(p);
                 return;
             }
-            // 3) 사각형 드래그 중
-            if (this.review._dragStart) {
-                const p = this._svgPoint(event);
-                const s = this.review._dragStart;
-                this.review.drawing = {
-                    x: Math.min(s.x, p.x),
-                    y: Math.min(s.y, p.y),
-                    w: Math.abs(p.x - s.x),
-                    h: Math.abs(p.y - s.y),
-                };
-            }
+            // 3) 사각형 도구는 mousedown 시점에 박스 + drag를 동시에 시작하고
+            // 그 drag는 위쪽 0)분기 (pendingDrag) 가 처리하므로 여기엔 분기 불필요.
         },
 
         reviewMouseUp() {
@@ -654,30 +668,8 @@ function app() {
                 this._appendPending({x, y, w, h});
                 return;
             }
-            // 3) 사각형 종료
-            if (this.review._dragStart) {
-                const d = this.review.drawing;
-                const start = this.review._dragStart;
-                this.review._dragStart = null;
-                this.review.drawing = null;
-
-                let box;
-                // 클릭만 한 경우(드래그 거리 8px 미만) → 기본 크기 박스를 클릭 지점에 생성.
-                if (!d || d.w < 8 || d.h < 8) {
-                    const W = this.review.bgWidth || 1000;
-                    const H = this.review.bgHeight || 1000;
-                    const defaultW = Math.max(220, W * 0.15);
-                    const defaultH = Math.max(56, H * 0.05);
-                    let x = start.x - defaultW / 2;
-                    let y = start.y - defaultH / 2;
-                    x = Math.max(0, Math.min(x, W - defaultW));
-                    y = Math.max(0, Math.min(y, H - defaultH));
-                    box = {x, y, w: defaultW, h: defaultH};
-                } else {
-                    box = d;
-                }
-                this._appendPending(box);
-            }
+            // 3) 사각형 도구는 mousedown에서 즉시 박스 생성 + drag 시작이라
+            // mouseup에서 추가로 할 일이 없음. pendingDrag가 위에서 이미 정리됨.
         },
 
         cancelPending(id) {

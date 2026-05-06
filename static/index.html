@@ -194,11 +194,6 @@
                                 </template>
                             </g>
                         </template>
-                        <!-- 사각형 도구로 드래그 중 -->
-                        <rect x-show="review.drawing"
-                              :x="review.drawing?.x" :y="review.drawing?.y"
-                              :width="review.drawing?.w" :height="review.drawing?.h"
-                              fill="rgba(59,130,246,0.10)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4" />
                         <!-- 브러시 도구로 색칠 중 -->
                         <polyline x-show="review.brushPoints.length > 0"
                                   :points="review.brushPoints.map(p => p.x + ',' + p.y).join(' ')"
@@ -213,7 +208,9 @@
             <!-- 우측: 선택된 블록 편집 / 새 영역 OCR 패널 -->
             <aside class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
                 <div class="text-xs uppercase tracking-wide text-slate-400">
-                    기존 박스를 클릭/드래그해서 이동·편집, 빈 영역을 드래그하거나 색칠해서 새 영역 추가. <b>사각형 도구는 그냥 클릭만 해도</b> 기본 크기 박스가 생기고 코너 핸들로 크기 조정 가능. <b>여러 박스를 한꺼번에</b> 그려두고 차례로 OCR·추가하는 흐름도 OK.
+                    <b>사각형 도구</b>: 빈 영역에 클릭 → 클릭 위치에 기본 크기 박스 생성. 마우스를 떼지 않고 그대로 끌면 박스가 따라옴. 떼면 거기서 멈춤. 코너 핸들로 크기 조정. <b>여러 번 클릭하면 박스가 여러 개</b> 생기고 각각 OCR·추가 가능.<br>
+                    <b>색칠 도구</b>: 자유롭게 칠한 영역의 외곽이 박스가 됨.<br>
+                    기존 박스(초록)를 끌면 이동, 코너로 크기 조정.
                 </div>
 
                 <!-- 기존 블록 선택 시 -->

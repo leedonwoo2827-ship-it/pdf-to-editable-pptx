@@ -25,8 +25,11 @@ function app() {
             tool: 'rect',             // 'rect' or 'brush'
             drawing: null,            // 사각형 드래그 중인 영역
             brushPoints: [],          // 브러시 모드에서 현재 칠하는 점들
-            pending: null,            // 드래그/브러시 종료 후 OCR 대기 영역
-            pendingText: '',
+            // pendings: 사용자가 그렸지만 아직 commit하지 않은 새 영역들. 여러 개 동시에 둘 수 있음.
+            // 각 항목: {id, x, y, w, h, text}
+            pendings: [],
+            activePendingId: null,    // 사이드 패널에 펼쳐 보일 항목 id (handles도 이 항목에만 표시)
+            _pendingIdSeq: 0,
             ocring: false,
             committing: false,
             saving: false,
@@ -34,7 +37,7 @@ function app() {
             dirty: false,
             _dragStart: null,
             movingBlock: null,        // 기존 박스 드래그 이동 상태 {idx, startX, startY, origX_pt, origY_pt, moved}
-            pendingDrag: null,        // pending 박스 이동/리사이즈 {handle, startX, startY, origX, origY, origW, origH}
+            pendingDrag: null,        // pending 박스 이동/리사이즈 {pending, handle, startX, startY, origX, origY, origW, origH}
             resizingBlock: null,      // 기존 박스 코너 리사이즈 {idx, handle, startX, startY, origX_pt, origY_pt, origW_pt, origH_pt}
         },
 
@@ -263,7 +266,8 @@ function app() {
         exitReview() {
             this.review.active = false;
             this.review.selectedIdx = null;
-            this.review.pending = null;
+            this.review.pendings = [];
+            this.review.activePendingId = null;
             this.review.drawing = null;
             this.review.dirty = false;
         },
@@ -285,8 +289,8 @@ function app() {
         async loadReviewPage(idx) {
             this.review.currentPage = idx;
             this.review.selectedIdx = null;
-            this.review.pending = null;
-            this.review.pendingText = '';
+            this.review.pendings = [];
+            this.review.activePendingId = null;
             this.review.drawing = null;
             this.review.dirty = false;
             this.review.bgUrl = `/api/review/${this.job.job_id}/${idx}/bg.png?t=${Date.now()}`;
@@ -333,7 +337,33 @@ function app() {
         // ----- Selection / edit / delete -----
         selectBlock(idx) {
             this.review.selectedIdx = idx;
-            this.review.pending = null;
+            this.review.activePendingId = null;
+        },
+
+        // ----- Pending helpers (multi) -----
+        _appendPending(box) {
+            const id = ++this.review._pendingIdSeq;
+            const pending = {id, x: box.x, y: box.y, w: box.w, h: box.h, text: ''};
+            this.review.pendings.push(pending);
+            this.review.activePendingId = id;
+            return pending;
+        },
+        getPending(id) {
+            return this.review.pendings.find(p => p.id === id) || null;
+        },
+        getActivePending() {
+            return this.getPending(this.review.activePendingId);
+        },
+        setActivePending(id) {
+            this.review.activePendingId = id;
+            this.review.selectedIdx = null;
+        },
+        removePending(id) {
+            this.review.pendings = this.review.pendings.filter(p => p.id !== id);
+            if (this.review.activePendingId === id) {
+                const list = this.review.pendings;
+                this.review.activePendingId = list.length > 0 ? list[list.length - 1].id : null;
+            }
         },
 
         deleteSelected() {
@@ -368,8 +398,8 @@ function app() {
         },
 
         // ----- Pending 박스 핸들 (이동·리사이즈) -----
-        pendingHandlePositions() {
-            const p = this.review.pending;
+        pendingHandlePositions(id) {
+            const p = this.getPending(id);
             if (!p) return [];
             // 핸들 크기는 viewBox 단위. bg 크기에 비례하여 잘 보이도록.
             const size = Math.max(14, Math.round((this.review.bgWidth || 1000) * 0.014));
@@ -381,18 +411,23 @@ function app() {
             ];
         },
 
-        pendingHandleDown(handle, event) {
+        pendingHandleDown(id, handle, event) {
             event.stopPropagation();
-            if (!this.review.pending) return;
+            const target = this.getPending(id);
+            if (!target) return;
+            // 핸들 클릭 시 그 pending 을 active로 지정 — 다른 pending에서 핸들을 잡으면 바로 거기로 포커스 이동.
+            this.review.activePendingId = id;
+            this.review.selectedIdx = null;
             const p = this._svgPoint(event);
             this.review.pendingDrag = {
+                pending: target,
                 handle,
                 startX: p.x,
                 startY: p.y,
-                origX: this.review.pending.x,
-                origY: this.review.pending.y,
-                origW: this.review.pending.w,
-                origH: this.review.pending.h,
+                origX: target.x,
+                origY: target.y,
+                origW: target.w,
+                origH: target.h,
             };
         },
 
@@ -439,7 +474,7 @@ function app() {
                 moved: false,
             };
             this.review.selectedIdx = idx;
-            this.review.pending = null;
+            this.review.activePendingId = null;
         },
 
         // ----- SVG의 빈 영역에서 mousedown -----
@@ -448,8 +483,8 @@ function app() {
             if (this.review.movingBlock) return;
 
             const p = this._svgPoint(event);
+            // 새로 그리기 시작하는 시점엔 기존 펜딩 보존 — 사용자가 여러 영역을 동시에 만들 수 있게.
             this.review.selectedIdx = null;
-            this.review.pending = null;
 
             if (this.review.tool === 'brush') {
                 this.review.brushPoints = [p];
@@ -509,38 +544,39 @@ function app() {
             }
             // 0) Pending 박스 이동/리사이즈 중
             const pd = this.review.pendingDrag;
-            if (pd && this.review.pending) {
+            if (pd && pd.pending) {
+                const target = pd.pending;
                 const p = this._svgPoint(event);
                 const dx = p.x - pd.startX;
                 const dy = p.y - pd.startY;
                 const minSize = 8;
                 if (pd.handle === 'move') {
-                    this.review.pending.x = pd.origX + dx;
-                    this.review.pending.y = pd.origY + dy;
+                    target.x = pd.origX + dx;
+                    target.y = pd.origY + dy;
                 } else if (pd.handle === 'nw') {
                     const nx = pd.origX + dx;
                     const ny = pd.origY + dy;
                     const nw = pd.origW - dx;
                     const nh = pd.origH - dy;
-                    if (nw >= minSize) { this.review.pending.x = nx; this.review.pending.w = nw; }
-                    if (nh >= minSize) { this.review.pending.y = ny; this.review.pending.h = nh; }
+                    if (nw >= minSize) { target.x = nx; target.w = nw; }
+                    if (nh >= minSize) { target.y = ny; target.h = nh; }
                 } else if (pd.handle === 'ne') {
                     const ny = pd.origY + dy;
                     const nw = pd.origW + dx;
                     const nh = pd.origH - dy;
-                    if (nw >= minSize) { this.review.pending.w = nw; }
-                    if (nh >= minSize) { this.review.pending.y = ny; this.review.pending.h = nh; }
+                    if (nw >= minSize) { target.w = nw; }
+                    if (nh >= minSize) { target.y = ny; target.h = nh; }
                 } else if (pd.handle === 'sw') {
                     const nx = pd.origX + dx;
                     const nw = pd.origW - dx;
                     const nh = pd.origH + dy;
-                    if (nw >= minSize) { this.review.pending.x = nx; this.review.pending.w = nw; }
-                    if (nh >= minSize) { this.review.pending.h = nh; }
+                    if (nw >= minSize) { target.x = nx; target.w = nw; }
+                    if (nh >= minSize) { target.h = nh; }
                 } else if (pd.handle === 'se') {
                     const nw = pd.origW + dx;
                     const nh = pd.origH + dy;
-                    if (nw >= minSize) { this.review.pending.w = nw; }
-                    if (nh >= minSize) { this.review.pending.h = nh; }
+                    if (nw >= minSize) { target.w = nw; }
+                    if (nh >= minSize) { target.h = nh; }
                 }
                 return;
             }
@@ -602,7 +638,7 @@ function app() {
                 this.review.movingBlock = null;
                 return;
             }
-            // 2) 브러시 종료 → 칠한 영역의 bounding box를 OCR 후보로
+            // 2) 브러시 종료 → 칠한 영역의 bounding box를 새 pending으로
             if (this.review.brushPoints.length > 0) {
                 const pts = this.review.brushPoints;
                 this.review.brushPoints = [];
@@ -615,8 +651,7 @@ function app() {
                 const w = (Math.max(...xs) - Math.min(...xs)) + 2 * PAD;
                 const h = (Math.max(...ys) - Math.min(...ys)) + 2 * PAD;
                 if (w < 16 || h < 16) return;
-                this.review.pending = {x, y, w, h};
-                this.review.pendingText = '';
+                this._appendPending({x, y, w, h});
                 return;
             }
             // 3) 사각형 종료
@@ -626,43 +661,38 @@ function app() {
                 this.review._dragStart = null;
                 this.review.drawing = null;
 
-                // 정확한 드래그가 어려운 사용자를 위해, 사실상 클릭만 한 경우에도
-                // 기본 크기 박스를 클릭 위치에 띄워준다 — 이후 코너 핸들로 조정.
-                // 드래그 거리가 8px 미만 = "클릭" 으로 간주.
+                let box;
+                // 클릭만 한 경우(드래그 거리 8px 미만) → 기본 크기 박스를 클릭 지점에 생성.
                 if (!d || d.w < 8 || d.h < 8) {
                     const W = this.review.bgWidth || 1000;
                     const H = this.review.bgHeight || 1000;
-                    // 텍스트 한 줄 모양에 가까운 가로로 길쭉한 기본 크기.
                     const defaultW = Math.max(220, W * 0.15);
                     const defaultH = Math.max(56, H * 0.05);
                     let x = start.x - defaultW / 2;
                     let y = start.y - defaultH / 2;
-                    // 캔버스 밖으로 새지 않도록 클램프.
                     x = Math.max(0, Math.min(x, W - defaultW));
                     y = Math.max(0, Math.min(y, H - defaultH));
-                    this.review.pending = {x, y, w: defaultW, h: defaultH};
-                    this.review.pendingText = '';
-                    return;
+                    box = {x, y, w: defaultW, h: defaultH};
+                } else {
+                    box = d;
                 }
-                this.review.pending = d;
-                this.review.pendingText = '';
+                this._appendPending(box);
             }
         },
 
-        cancelPending() {
-            this.review.pending = null;
-            this.review.pendingText = '';
+        cancelPending(id) {
+            this.removePending(id);
         },
 
-        // OCR만 실행 — 검출된 텍스트를 입력칸에 채워줌. 사용자가 검토 후
+        // OCR만 실행 — 검출된 텍스트를 해당 pending의 text 칸에 채워줌. 사용자가 검토 후
         // "블록으로 추가" 버튼으로 최종 commit하면 그제서야 inpaint + 저장.
-        async ocrPending() {
-            if (!this.review.pending) return;
+        async ocrPending(id) {
+            const target = this.getPending(id);
+            if (!target) return;
             this.review.ocring = true;
             try {
                 const W = this.review.bgWidth, H = this.review.bgHeight;
-                const p = this.review.pending;
-                const bbox_norm = [p.x / W, p.y / H, p.w / W, p.h / H];
+                const bbox_norm = [target.x / W, target.y / H, target.w / W, target.h / H];
                 const r = await fetch(`/api/review/${this.job.job_id}/${this.review.currentPage}/ocr-region`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -670,7 +700,7 @@ function app() {
                 });
                 const data = await r.json();
                 if (data.ok && data.block && data.block.text) {
-                    this.review.pendingText = data.block.text;
+                    target.text = data.block.text;
                     this.showToast(`OCR 결과: "${data.block.text.slice(0, 30)}"`);
                 } else {
                     this.showToast(data.message || 'OCR이 텍스트를 찾지 못했습니다. 직접 입력해주세요.');
@@ -684,9 +714,10 @@ function app() {
 
         // 사용자가 입력한 텍스트로 블록을 commit. 서버에서 그 영역 inpaint
         // + 블록 저장이 함께 일어나고, 프론트엔드는 새 bg를 다시 받아 표시.
-        async addPendingManual() {
-            if (!this.review.pending) return;
-            const text = (this.review.pendingText || '').trim();
+        async addPendingManual(id) {
+            const target = this.getPending(id);
+            if (!target) return;
+            const text = (target.text || '').trim();
             if (!text) {
                 this.showToast('텍스트를 입력해주세요.');
                 return;
@@ -694,8 +725,7 @@ function app() {
             this.review.committing = true;
             try {
                 const W = this.review.bgWidth, H = this.review.bgHeight;
-                const p = this.review.pending;
-                const bbox_norm = [p.x / W, p.y / H, p.w / W, p.h / H];
+                const bbox_norm = [target.x / W, target.y / H, target.w / W, target.h / H];
                 const r = await fetch(`/api/review/${this.job.job_id}/${this.review.currentPage}/commit-region`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -709,15 +739,28 @@ function app() {
                 this._appendBlock(data.block);
                 // 서버가 bg를 inpaint해서 다시 저장했으므로 캐시 무효화하고 새로 로드
                 this.review.bgUrl = `/api/review/${this.job.job_id}/${this.review.currentPage}/bg.png?t=${Date.now()}`;
-                this.review.pending = null;
-                this.review.pendingText = '';
-                // commit-region은 이미 서버에 저장한 상태이므로 현재 페이지의 dirty는
-                // 그대로 유지 (다른 박스 편집은 아직 미저장). 하지만 추가는 이미 반영.
+                this.removePending(id);
                 this.showToast('영역 추가됨 (배경 정리 완료)');
             } catch (e) {
                 this.showToast('추가 실패: ' + e.message);
             } finally {
                 this.review.committing = false;
+            }
+        },
+
+        // 모든 pending을 차례대로 commit. 서버 inpainting이 직렬로 일어나므로
+        // pending 1개당 LaMa forward 1번이 필요하다.
+        async addAllPendings() {
+            // text 비어있는 pending은 commit 스킵 (사용자가 채워야 함)
+            const ids = this.review.pendings
+                .filter(p => (p.text || '').trim().length > 0)
+                .map(p => p.id);
+            if (ids.length === 0) {
+                this.showToast('텍스트를 채운 박스가 없습니다.');
+                return;
+            }
+            for (const id of ids) {
+                await this.addPendingManual(id);
             }
         },
 

@@ -232,7 +232,8 @@ pip uninstall -y torch torchvision
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
 
-> ⚠️ **흔한 함정**: 그냥 `pip install torch torchvision --index-url ...` 만 치면 pip이 *"Requirement already satisfied"*라고 출력하고 **CPU torch를 그대로 둡니다**. 그래서 위처럼 `pip uninstall`을 먼저 해서 깨끗한 상태로 만든 다음 GPU 빌드를 받아야 해요.
+> ⚠️ **함정 1 — "Requirement already satisfied"**:
+> 그냥 `pip install torch torchvision --index-url ...` 만 치면 pip이 *"Requirement already satisfied"*라고 출력하고 **CPU torch를 그대로 둡니다**. 그래서 위처럼 `pip uninstall`을 먼저 해서 깨끗한 상태로 만든 다음 GPU 빌드를 받아야 해요.
 >
 > 한 줄로 합치는 대안: `pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu121` — `--force-reinstall` 플래그가 같은 효과를 냅니다.
 
@@ -248,6 +249,27 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
 (둘 다 동작 — `cu121`이 호환성 폭이 더 넓어서 가이드 기본값.)
+
+> ⚠️ **함정 2 — numpy / pillow 호환 경고**:
+> 위 명령이 끝날 때 다음과 같은 빨간 ERROR 메시지가 나올 수 있습니다:
+> ```
+> ERROR: pip's dependency resolver does not currently take into account all the packages
+> that are installed. This behaviour is the source of the following dependency conflicts.
+> simple-lama-inpainting 0.1.1 requires numpy<2.0.0,>=1.25.1, but you have numpy 2.4.3 ...
+> simple-lama-inpainting 0.1.1 requires pillow<11.0.0,>=10.0.0, but you have pillow 12.1.1 ...
+> ```
+>
+> 무슨 일인가: `--force-reinstall`이 torch의 의존성으로 **numpy / pillow도 더 새 버전으로 업그레이드**해버립니다. 그런데 `simple_lama_inpainting 0.1.x`는 더 옛 버전(numpy<2.0, pillow<11.0)에 핀이 걸려 있음.
+>
+> 위험: numpy 2.x에서 제거된 API(`np.bool`, `np.int` 등)를 simple_lama_inpainting이 사용하면 런타임 에러. 동작할 가능성도 있고 깨질 가능성도 있어요 — 운에 맡기지 말고 그냥 다운그레이드:
+>
+> ```cmd
+> pip install "numpy<2.0" "pillow<11.0"
+> ```
+>
+> → numpy 1.26.x, pillow 10.4.x로 떨어집니다. torch / torchvision / easyocr / opencv-python 모두 이 범위 지원하므로 안전.
+
+`requirements.txt`에는 **`numpy>=1.24,<2.0` / `Pillow>=10.0,<11.0`** 으로 상한이 걸려 있어서, 처음부터 `setup.bat`으로 깐 환경에서는 이 함정에 안 걸립니다. **함정 2는 이미 깔린 환경에서 CUDA torch로 갈아탈 때만 발생**해요.
 
 ### 3단계: PyTorch가 GPU를 인식하는지 검증
 

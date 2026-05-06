@@ -14,8 +14,8 @@ simple_lama_inpainting>=0.1   # LaMa wrapper for text-removal inpainting
 torch>=2.0                    # required by easyocr + simple_lama_inpainting (CPU build OK)
 torchvision>=0.15
 opencv-python>=4.8            # mask morphology
-numpy>=1.24
-Pillow>=10.0
+numpy>=1.24,<2.0              # simple_lama_inpainting 0.1.x is pinned to numpy <2.0
+Pillow>=10.0,<11.0            # simple_lama_inpainting 0.1.x is pinned to pillow <11.0
 python-pptx>=1.0,<2.0         # write the .pptx
 
 # --- Models ---

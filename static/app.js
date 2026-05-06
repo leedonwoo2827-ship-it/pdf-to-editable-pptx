@@ -17,8 +17,9 @@ function app() {
             bgUrl: '',
             bgWidth: 0,
             bgHeight: 0,
-            displayW: 1100,           // 에디터 캔버스 CSS 픽셀 너비
-            displayH: 0,              // 에디터 캔버스 CSS 픽셀 높이 (이미지 로드 시 계산)
+            displayW: 1100,           // 에디터 캔버스 기본 CSS 픽셀 너비
+            displayH: 0,              // 에디터 캔버스 기본 CSS 픽셀 높이 (이미지 로드 시 계산)
+            zoom: 1.0,                // 사용자 줌 배율 (0.5 ~ 3.0). 캔버스 표시 크기에만 영향, viewBox는 그대로
             blocks: [],               // [{text, x_pt, y_pt, w_pt, h_pt, score, _px:{x,y,w,h}}]
             pageWPt: 1,
             pageHPt: 1,
@@ -411,6 +412,81 @@ function app() {
         clearAllPendings() {
             this.review.pendings = [];
             this.review.activePendingId = null;
+        },
+
+        // ----- Canvas zoom (캔버스 부분만 확대, 우측 패널/툴바는 그대로) -----
+        reviewZoomIn() {
+            this.review.zoom = Math.min(4.0, +(this.review.zoom * 1.25).toFixed(2));
+        },
+        reviewZoomOut() {
+            this.review.zoom = Math.max(0.5, +(this.review.zoom / 1.25).toFixed(2));
+        },
+        reviewZoomReset() {
+            this.review.zoom = 1.0;
+        },
+
+        // SVG 안에 pending 박스/라벨/핸들을 직접 createElementNS로 그린다.
+        // Alpine x-for 가 SVG namespace 안에서 가끔 재렌더를 누락하는 이슈를
+        // 우회하기 위함 — index.html의 <g x-ref="pendingsGroup"> 가 빈 컨테이너이고,
+        // pendings/activePendingId 변경 시 $watch 가 이 함수를 호출한다.
+        renderPendingsSVG() {
+            const g = this.$refs && this.$refs.pendingsGroup;
+            if (!g) return;
+            const SVG_NS = 'http://www.w3.org/2000/svg';
+            // 기존 자식들 제거.
+            while (g.firstChild) g.removeChild(g.firstChild);
+
+            // 1) 각 pending: rect + label
+            this.review.pendings.forEach((p, idx) => {
+                const isActive = this.review.activePendingId === p.id;
+                const rect = document.createElementNS(SVG_NS, 'rect');
+                rect.setAttribute('x', p.x);
+                rect.setAttribute('y', p.y);
+                rect.setAttribute('width', p.w);
+                rect.setAttribute('height', p.h);
+                rect.setAttribute('fill', isActive ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.18)');
+                rect.setAttribute('stroke', isActive ? '#b45309' : '#d97706');
+                rect.setAttribute('stroke-width', isActive ? 5 : 4);
+                rect.setAttribute('class', 'cursor-move');
+                rect.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    this.pendingHandleDown(p.id, 'move', e);
+                });
+                g.appendChild(rect);
+
+                const text = document.createElementNS(SVG_NS, 'text');
+                text.setAttribute('x', p.x + 8);
+                text.setAttribute('y', p.y + 22);
+                text.setAttribute('font-size', '16');
+                text.setAttribute('font-weight', 'bold');
+                text.setAttribute('font-family', 'sans-serif');
+                text.setAttribute('fill', '#7c2d12');
+                text.setAttribute('pointer-events', 'none');
+                const preview = (p.text || '').slice(0, 28) || '(빈 박스)';
+                text.textContent = `${idx + 1}. ${preview}`;
+                g.appendChild(text);
+            });
+
+            // 2) active pending 의 4개 코너 핸들
+            if (this.review.activePendingId !== null) {
+                const handles = this.pendingHandlePositions(this.review.activePendingId);
+                handles.forEach(h => {
+                    const handle = document.createElementNS(SVG_NS, 'rect');
+                    handle.setAttribute('x', h.x - h.size / 2);
+                    handle.setAttribute('y', h.y - h.size / 2);
+                    handle.setAttribute('width', h.size);
+                    handle.setAttribute('height', h.size);
+                    handle.setAttribute('fill', '#b45309');
+                    handle.setAttribute('stroke', 'white');
+                    handle.setAttribute('stroke-width', '2');
+                    handle.setAttribute('class', `cursor-${h.cursor}`);
+                    handle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        this.pendingHandleDown(this.review.activePendingId, h.name, e);
+                    });
+                    g.appendChild(handle);
+                });
+            }
         },
 
         // ----- 좌표 변환 -----

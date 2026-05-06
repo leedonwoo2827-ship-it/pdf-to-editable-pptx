@@ -31,6 +31,9 @@ class JobStatus(BaseModel):
 class ProcessRequest(BaseModel):
     dpi: int = 200
     dilation: int = 15
+    # NotebookLM·Canva 등 우하단 고정 위치에 워터마크 로고가 박힌 PDF용.
+    # 켜면 페이지마다 우하단 일정 영역을 OCR 마스크에 강제 추가 → LaMa가 함께 지움.
+    remove_watermark: bool = False
 
 
 class ReviewBlock(BaseModel):

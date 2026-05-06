@@ -71,7 +71,7 @@ def page_png(job_id: str, page_idx: int) -> Response:
 
 # --- Process / status / result ---
 
-def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
+def _run_conversion(job_id: str, dpi: int, dilation: int, remove_watermark: bool) -> None:
     job = jobs.store.get(job_id)
     if not job:
         return
@@ -116,6 +116,7 @@ def _run_conversion(job_id: str, dpi: int, dilation: int) -> None:
             on_page_progress=on_page_progress,
             cancel_flag=cancel_flag,
             workspace_dir=job.workspace_dir,
+            remove_watermark=remove_watermark,
         )
         job.output_path = output_path
         job.overall_state = "complete"
@@ -145,7 +146,9 @@ def process(job_id: str, req: ProcessRequest) -> JobStatus:
     job.pages = [PageStatus(index=i) for i in range(job.page_count)]
 
     t = threading.Thread(
-        target=_run_conversion, args=(job_id, req.dpi, req.dilation), daemon=True
+        target=_run_conversion,
+        args=(job_id, req.dpi, req.dilation, req.remove_watermark),
+        daemon=True,
     )
     t.start()
     return job.status()

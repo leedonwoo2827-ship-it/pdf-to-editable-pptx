@@ -6,6 +6,7 @@ function app() {
         outputReady: false,
         dpi: 200,
         dilation: 15,
+        removeWatermark: false,
         toast: '',
         _pollTimer: null,
 
@@ -188,7 +189,11 @@ function app() {
                 const r = await fetch(`/api/process/${this.job.job_id}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ dpi: this.dpi, dilation: this.dilation }),
+                    body: JSON.stringify({
+                        dpi: this.dpi,
+                        dilation: this.dilation,
+                        remove_watermark: this.removeWatermark,
+                    }),
                 });
                 if (!r.ok) {
                     const err = await r.json().catch(() => ({}));

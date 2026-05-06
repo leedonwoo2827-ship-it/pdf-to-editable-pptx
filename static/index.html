@@ -96,12 +96,13 @@
                     class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded disabled:opacity-40">다음 →</button>
             <span class="mx-3 text-slate-300">|</span>
             <span class="text-xs text-slate-500">도구:</span>
-            <button @click="setReviewTool('rect')"
-                    :class="review.tool === 'rect' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
-                    class="text-sm px-3 py-1 rounded">⬛ 사각형</button>
+            <button @click="createCenterPending()"
+                    class="text-sm px-3 py-1 rounded bg-amber-500 hover:bg-amber-600 text-white">
+                ⬛ 박스 추가
+            </button>
             <button @click="setReviewTool('brush')"
                     :class="review.tool === 'brush' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
-                    class="text-sm px-3 py-1 rounded">🖌 색칠</button>
+                    class="text-sm px-3 py-1 rounded">🖌 색칠 모드</button>
 
             <span class="grow"></span>
             <span class="text-xs text-slate-500" x-text="review.dirty ? '저장되지 않은 변경 있음' : '변경 사항 없음'"></span>
@@ -162,36 +163,30 @@
                                 </template>
                             </g>
                         </template>
-                        <!-- 새로 그린 영역들 (여러 개 동시 가능) -->
+                        <!-- 새로 그린 영역들 (여러 개 동시 가능). nested template를 피하기 위해
+                             body+label 따로, handles는 아래 별도 top-level template로 분리. -->
                         <template x-for="p in review.pendings" :key="p.id">
                             <g>
-                                <!-- 본체: 클릭+드래그로 이동 + active 전환 -->
                                 <rect
                                       :x="p.x" :y="p.y"
                                       :width="p.w" :height="p.h"
-                                      :fill="review.activePendingId === p.id ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.10)'"
-                                      :stroke="review.activePendingId === p.id ? '#f59e0b' : '#fbbf24'"
-                                      :stroke-width="review.activePendingId === p.id ? 3 : 2"
-                                      :stroke-dasharray="review.activePendingId === p.id ? '' : '6 4'"
+                                      :fill="review.activePendingId === p.id ? 'rgba(245,158,11,0.30)' : 'rgba(245,158,11,0.15)'"
+                                      :stroke="review.activePendingId === p.id ? '#d97706' : '#f59e0b'"
+                                      :stroke-width="review.activePendingId === p.id ? 4 : 3"
                                       class="cursor-move"
                                       @mousedown.stop="pendingHandleDown(p.id, 'move', $event)" />
-                                <!-- 작은 라벨: 'N. text 미리보기' -->
                                 <text :x="p.x + 6" :y="p.y + 18"
                                       font-size="14" font-family="sans-serif" fill="#92400e"
                                       x-text="(review.pendings.indexOf(p) + 1) + '. ' + ((p.text || '').slice(0, 28) || '(빈 박스)')"></text>
-                                <!-- active pending에만 4개 코너 핸들 -->
-                                <template x-if="review.activePendingId === p.id">
-                                    <g>
-                                        <template x-for="h in pendingHandlePositions(p.id)" :key="h.name">
-                                            <rect :x="h.x - h.size/2" :y="h.y - h.size/2"
-                                                  :width="h.size" :height="h.size"
-                                                  fill="#f59e0b" stroke="white" stroke-width="2"
-                                                  :class="`cursor-${h.cursor}`"
-                                                  @mousedown.stop="pendingHandleDown(p.id, h.name, $event)" />
-                                        </template>
-                                    </g>
-                                </template>
                             </g>
+                        </template>
+                        <!-- active pending의 4개 코너 핸들 — nested 회피 위해 top-level x-for로 분리. -->
+                        <template x-for="h in (review.activePendingId !== null ? pendingHandlePositions(review.activePendingId) : [])" :key="h.name">
+                            <rect :x="h.x - h.size/2" :y="h.y - h.size/2"
+                                  :width="h.size" :height="h.size"
+                                  fill="#d97706" stroke="white" stroke-width="2"
+                                  :class="`cursor-${h.cursor}`"
+                                  @mousedown.stop="pendingHandleDown(review.activePendingId, h.name, $event)" />
                         </template>
                         <!-- 브러시 도구로 색칠 중 -->
                         <polyline x-show="review.brushPoints.length > 0"
@@ -207,9 +202,10 @@
             <!-- 우측: 선택된 블록 편집 / 새 영역 OCR 패널 -->
             <aside class="bg-white border-l border-slate-200 overflow-y-auto p-4 space-y-4">
                 <div class="text-xs uppercase tracking-wide text-slate-400">
-                    <b>사각형 도구</b>: 빈 영역에 클릭 → 클릭 위치에 기본 크기 박스 생성. 마우스를 떼지 않고 그대로 끌면 박스가 따라옴. 떼면 거기서 멈춤. 코너 핸들로 크기 조정. <b>여러 번 클릭하면 박스가 여러 개</b> 생기고 각각 OCR·추가 가능.<br>
-                    <b>색칠 도구</b>: 자유롭게 칠한 영역의 외곽이 박스가 됨.<br>
-                    기존 박스(초록)를 끌면 이동, 코너로 크기 조정.
+                    <b>⬛ 박스 추가</b> 버튼: 캔버스 정중앙에 기본 크기 박스를 즉시 생성. 그 박스를 끌어서 원하는 위치로 이동, 코너 핸들로 크기 조정. <b>여러 번 누르면 여러 개</b> 추가됨.<br>
+                    <b>🖌 색칠 모드</b>: 토글. 켠 뒤 캔버스를 자유롭게 칠하면 칠한 영역의 외곽이 박스가 됨.<br>
+                    기존 박스(초록)를 끌면 이동, 코너로 크기 조정.<br>
+                    <span class="text-amber-700">⚠️ 캔버스 빈 영역을 클릭만 해서는 박스 안 생김 (실수 방지). 박스는 위 ⬛ 박스 추가 버튼으로만.</span>
                 </div>
 
                 <!-- 기존 블록 선택 시 -->
@@ -235,12 +231,19 @@
                         <div class="text-sm font-semibold text-amber-800">
                             새 영역 (<span x-text="review.pendings.length"></span>)
                         </div>
-                        <button @click="addAllPendings()" :disabled="review.committing"
-                                class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded px-2 py-1 disabled:opacity-50"
-                                title="텍스트가 채워진 모든 박스를 한꺼번에 추가">
-                            <span x-show="!review.committing">✅ 모두 추가</span>
-                            <span x-show="review.committing">정리 중…</span>
-                        </button>
+                        <div class="flex gap-1">
+                            <button @click="clearAllPendings()" :disabled="review.committing"
+                                    class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 rounded px-2 py-1 disabled:opacity-50"
+                                    title="모든 펜딩 박스 한꺼번에 제거 (commit 안 함)">
+                                ✕ 모두 제거
+                            </button>
+                            <button @click="addAllPendings()" :disabled="review.committing"
+                                    class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded px-2 py-1 disabled:opacity-50"
+                                    title="텍스트가 채워진 모든 박스를 한꺼번에 추가">
+                                <span x-show="!review.committing">✅ 모두 추가</span>
+                                <span x-show="review.committing">정리 중…</span>
+                            </button>
+                        </div>
                     </div>
                     <template x-for="p in review.pendings" :key="p.id">
                         <div :class="review.activePendingId === p.id ? 'border-amber-500 bg-amber-50' : 'border-amber-200 bg-amber-25 hover:bg-amber-50'"

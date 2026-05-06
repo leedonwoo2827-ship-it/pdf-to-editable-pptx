@@ -22,7 +22,7 @@ function app() {
             pageWPt: 1,
             pageHPt: 1,
             selectedIdx: null,
-            tool: 'rect',             // 'rect' or 'brush'
+            tool: 'none',             // 'none' (캔버스 클릭으로는 박스 생성 X) or 'brush'
             drawing: null,            // 사각형 드래그 중인 영역
             brushPoints: [],          // 브러시 모드에서 현재 칠하는 점들
             // pendings: 사용자가 그렸지만 아직 commit하지 않은 새 영역들. 여러 개 동시에 둘 수 있음.
@@ -378,12 +378,34 @@ function app() {
             this.review.dirty = true;
         },
 
-        // ----- Tool toggle (rect / brush) -----
+        // ----- Tool toggle (brush only) -----
         setReviewTool(name) {
-            this.review.tool = name;
+            // 같은 도구를 다시 누르면 토글 해제 → 'none' (안전 모드).
+            this.review.tool = (this.review.tool === name) ? 'none' : name;
             this.review.drawing = null;
             this.review.brushPoints = [];
             this.review._dragStart = null;
+        },
+
+        // ----- 박스 추가 (액션 버튼) -----
+        // 캔버스 정중앙에 기본 크기 pending 하나 생성 + active로.
+        // 사용자가 직접 캔버스를 클릭할 필요 없이 버튼으로만 생성하므로 실수가 줄어듦.
+        createCenterPending() {
+            const W = this.review.bgWidth || 1000;
+            const H = this.review.bgHeight || 1000;
+            const defaultW = Math.max(220, W * 0.15);
+            const defaultH = Math.max(56, H * 0.05);
+            const x = (W - defaultW) / 2;
+            const y = (H - defaultH) / 2;
+            this._appendPending({x, y, w: defaultW, h: defaultH});
+            // 도구는 brush가 아닌 상태로 유지 — 캔버스 클릭은 생성 트리거 X.
+            this.review.tool = 'none';
+        },
+
+        // 모든 pending 일괄 제거 (실수로 쌓인 빈 박스 정리용).
+        clearAllPendings() {
+            this.review.pendings = [];
+            this.review.activePendingId = null;
         },
 
         // ----- 좌표 변환 -----
@@ -483,40 +505,16 @@ function app() {
         },
 
         // ----- SVG의 빈 영역에서 mousedown -----
+        // 캔버스 빈 영역 클릭으로는 박스를 생성하지 않음 (실수 방지).
+        // brush 도구가 활성화된 상태에서만 색칠 시작.
+        // 박스 추가는 우측의 "+ 박스 추가" 버튼으로만 가능 → createCenterPending().
         reviewMouseDown(event) {
-            // 기존 박스(rect/text/g) 위에서 mousedown은 blockMouseDown이 먼저 잡음
             if (this.review.movingBlock) return;
-
-            const p = this._svgPoint(event);
             this.review.selectedIdx = null;
-
             if (this.review.tool === 'brush') {
+                const p = this._svgPoint(event);
                 this.review.brushPoints = [p];
-                return;
             }
-
-            // 사각형 도구: 클릭 즉시 클릭 위치에 기본 크기 박스 생성 + 그대로 move drag 시작.
-            // 마우스를 떼지 않고 드래그하면 박스가 따라오고, 떼면 거기서 멈춤.
-            // 드래그-크기-그리기 모델은 폐기 — 단순한 "클릭→이동"이 더 직관적.
-            const W = this.review.bgWidth || 1000;
-            const H = this.review.bgHeight || 1000;
-            const defaultW = Math.max(220, W * 0.15);
-            const defaultH = Math.max(56, H * 0.05);
-            let bx = p.x - defaultW / 2;
-            let by = p.y - defaultH / 2;
-            bx = Math.max(0, Math.min(bx, W - defaultW));
-            by = Math.max(0, Math.min(by, H - defaultH));
-            const newPending = this._appendPending({x: bx, y: by, w: defaultW, h: defaultH});
-            this.review.pendingDrag = {
-                pending: newPending,
-                handle: 'move',
-                startX: p.x,
-                startY: p.y,
-                origX: newPending.x,
-                origY: newPending.y,
-                origW: newPending.w,
-                origH: newPending.h,
-            };
         },
 
         reviewMouseMove(event) {
